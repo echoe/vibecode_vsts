@@ -9,7 +9,7 @@ I wanted something that was like the Opsix, and like Six Sines, but was:
 Because of that, I eventually got this synth out of the AI, with a lot of testing and checking through the process. I also (despite my best efforts) did learn a little bit about how JUCE functions.
 
 It looks like this:
-![alt text](https://github.com/echoe/six_sounds/blob/main/picture/six_sounds_002.png?raw=true)
+![alt text](https://github.com/echoe/vibecode_vsts/blob/main/six_sines/picture/six_sounds_002.png)
 
 
 Features:
