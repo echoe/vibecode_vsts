@@ -23,11 +23,17 @@ void SpectralResonatorAudioProcessor::prepareToPlay (double sampleRate, int samp
 
 bool SpectralResonatorAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
-    if (layouts.getMainOutput() != juce::AudioChannelSet::mono()
-     && layouts.getMainOutput() != juce::AudioChannelSet::stereo())
+    // In JUCE 8, use getChannelSet(isInput, busIndex) to query layout configurations
+    auto mainInputLayout  = layouts.getChannelSet (true, 0);
+    auto mainOutputLayout = layouts.getChannelSet (false, 0);
+
+    // Only allow mono or stereo configurations
+    if (mainOutputLayout != juce::AudioChannelSet::mono()
+     && mainOutputLayout != juce::AudioChannelSet::stereo())
         return false;
 
-    if (layouts.getMainOutput() != layouts.getMainInput())
+    // Ensure the input channel configuration matches the output configuration
+    if (mainOutputLayout != mainInputLayout)
         return false;
 
     return true;

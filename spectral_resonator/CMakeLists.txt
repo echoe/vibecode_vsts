@@ -1,9 +1,16 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(SpectralResonator VERSION 1.0.0 REQUIRED LANGUAGES CXX)
+project(SpectralResonator VERSION 1.0.0 LANGUAGES CXX)
 
-# Find JUCE (Assumes JUCE is installed globally or added as a submodule)
-find_package(JUCE CONFIG REQUIRED)
+# --- Automatically download and include JUCE ---
+include(FetchContent)
+FetchContent_Declare(
+    juce
+    GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
+    GIT_TAG        8.0.0
+)
+FetchContent_MakeAvailable(juce)
+# ------------------------------------------------
 
 juce_add_plugin(SpectralResonator
     COMPANY_NAME "YourCompany"
@@ -22,6 +29,13 @@ target_sources(SpectralResonator PRIVATE
     Source/PluginProcessor.h
     Source/PluginProcessor.cpp
 )
+
+# --- ADD THIS BLOCK TO BYPASS GTK/WEBKIT DEPENDENCIES ---
+target_compile_definitions(SpectralResonator PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+)
+# --------------------------------------------------------
 
 target_compile_features(SpectralResonator PRIVATE cxx_std_17)
 
