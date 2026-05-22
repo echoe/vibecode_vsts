@@ -55,3 +55,10 @@ Open your six_sounds folder in VS Code.
 ctrl+shift+p, CMake: Select a Kit, and select the VSCode stuff you just installed.
 Remove the parts of the CMake file that call out Linux binaries specifically.
 ... Click build.
+
+
+Possible plans for what's next:
+-Redo the graphics with an actual plan and probably rewrite the entire thing by hand using the current code as a guide
+-add additional options to use in one of the six slots - filters work, so do comb filters, but what about banks of comb filters? spectral resonators?
+-figure out an actual save system that doesn't suck, including an init patch that auto-loads when you open the synth
+-extended from that, make a starter bank of presets

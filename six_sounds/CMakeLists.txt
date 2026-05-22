@@ -1,8 +1,14 @@
 cmake_minimum_required(VERSION 3.15)
 project(SixSounds VERSION 0.0.2)
 
-# Add JUCE (Make sure the JUCE folder is inside SixSounds)
-add_subdirectory(JUCE)
+# --- Automatically download and include JUCE ---
+include(FetchContent)
+FetchContent_Declare(
+    juce
+    GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
+    GIT_TAG        8.0.0
+)
+FetchContent_MakeAvailable(juce)
 
 # Linux Dependencies. These need to be removed to build this on windows or mac
 find_package(PkgConfig REQUIRED)
