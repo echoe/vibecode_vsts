@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(FourOpSynth VERSION 1.0.0 LANGUAGES CXX)
+project(SixSounds VERSION 1.0.0 LANGUAGES CXX)
 
 # --- Automatically download and include JUCE ---
 include(FetchContent)
@@ -10,48 +10,42 @@ FetchContent_Declare(
     GIT_TAG        8.0.0
 )
 FetchContent_MakeAvailable(juce)
+# ------------------------------------------------
 
-# Initialize the JUCE plugin target architecture
-juce_add_plugin(FourOpSynth
-    COMPANY_NAME "YourCompany"
+juce_add_plugin(SixSounds
+    COMPANY_NAME "VibecodeXtreme"
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT FALSE
-    PLUGIN_MANUFACTURER_CODE Fops
-    PLUGIN_CODE Fosy
-    FORMATS VST3 Standalone
-)
+    IS_MIDI_EFFECT FALSE
+    EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+    COPY_PLUGIN_AFTER_BUILD TRUE
+    PLUGIN_MANUFACTURER_CODE "YCom"
+    PLUGIN_PLUGIN_CODE "Sres"
+    FORMATS VST3 AU
+    PRODUCT_NAME "SixSounds")
 
-# This generates the JuceHeader.h file that our source files are looking for.
-juce_generate_juce_header(FourOpSynth)
-
-# Allocate target source files
-target_sources(FourOpSynth PRIVATE
-    Source/PluginProcessor.cpp
+target_sources(SixSounds PRIVATE
     Source/PluginProcessor.h
-    Source/PluginEditor.cpp
+    Source/PluginProcessor.cpp
     Source/PluginEditor.h
-    Source/SynthEngine.h
+    Source/PluginEditor.cpp
 )
-
-# Force standard up-to-date C++ modules
-target_compile_features(FourOpSynth PRIVATE cxx_std_20)
 
 # --- ADD THIS BLOCK TO BYPASS GTK/WEBKIT DEPENDENCIES ---
-target_compile_definitions(FourOpSynth PRIVATE
+target_compile_definitions(SixSounds PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
 )
 # --------------------------------------------------------
 
-# Link essential JUCE engine modules required by our plugin
-target_link_libraries(FourOpSynth PRIVATE
-    juce::juce_audio_utils
+target_compile_features(SixSounds PRIVATE cxx_std_17)
+
+target_link_libraries(SixSounds PRIVATE
     juce::juce_audio_processors
-    juce::juce_gui_basics
-    juce::juce_graphics
-    juce::juce_data_structures
-    juce::juce_events
-    juce::juce_core
+    juce::juce_dsp
+    juce::juce_audio_utils
 )
+
+juce_generate_juce_header(SixSounds)
