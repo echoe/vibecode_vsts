@@ -1,13 +1,13 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(SixSounds VERSION 1.0.0 LANGUAGES CXX)
+project(SixSounds VERSION 1.0.0 LANGUAGES C CXX)
 
 # --- Automatically download and include JUCE ---
 include(FetchContent)
 FetchContent_Declare(
     juce
     GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
-    GIT_TAG        8.0.0
+    GIT_TAG        8.0.13
 )
 FetchContent_MakeAvailable(juce)
 # ------------------------------------------------
