@@ -1,7 +1,7 @@
+// FMVoice.h
 #pragma once
 #include <JuceHeader.h>
 #include "FMOperator.h"
-#include "Filters.h"
 #include "SynthFilter.h"
 #include "Constants.h"
 

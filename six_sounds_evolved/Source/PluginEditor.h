@@ -1,3 +1,4 @@
+// PluginEditor.h
 #pragma once
 #include "PluginProcessor.h"
 #include "OperatorsPage.h"
