@@ -103,13 +103,27 @@ public:
 
     void renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int startSample, int numSamples) override
     {
-        // Guard check: if parameters haven't mapped yet, exit gracefully without dropping the note
         if (ratioParams[0] == nullptr) return;
-        // Main Sample-by-Sample DSP Loop
+    
+        double safeSampleRate = getSampleRate() > 0.0 ? getSampleRate() : 44100.0;
+    
+        // Precalculate resonance 'k' at block-rate to save precious CPU cycles
+        std::array<float, ProjectConfig::numOperators> precalculatedK;
+        for (int i = 0; i < ProjectConfig::numOperators; ++i)
+        {
+            float detune = detuneParams[i]->load (std::memory_order_relaxed);
+            float resonanceQ = 0.1f + (detune * 4.9f);
+            precalculatedK[i] = 1.0f / resonanceQ;
+            
+            int filterTypeChoice = static_cast<int>(filterTypeParams[i]->load (std::memory_order_relaxed));
+            opFilters[i].setType (filterTypeChoice);
+        }
+    
+        // Main Sample Loop
         for (int sample = 0; sample < numSamples; ++sample)
         {
             std::array<float, ProjectConfig::numOperators> opOutputs { 0.0f };
-            // 1. Calculate FM cross-modulation grid
+    
             for (int dest = 0; dest < ProjectConfig::numOperators; ++dest)
             {
                 float modulationSum = 0.0f;
@@ -118,31 +132,36 @@ public:
                     float modIndex = matrixParams[src][dest]->load (std::memory_order_relaxed);
                     modulationSum += lastOpOutputs[src] * modIndex;
                 }
+    
                 float ratio = ratioParams[dest]->load (std::memory_order_relaxed);
-                float detune = detuneParams[dest]->load (std::memory_order_relaxed);
-		int waveType = static_cast<int> (waveParams[dest]->load (std::memory_order_relaxed));
-                if (waveType == 5) // Adjust this index if 'Filter' is located elsewhere in your menu
+                int waveType = static_cast<int> (waveParams[dest]->load (std::memory_order_relaxed));
+    
+                if (waveType == 5) // If this operator is acting as a filter
                 {
-		    // set required vars
-                    float audioInput = modulationSum;
-                    float cutoffHz = baseFrequency * ratio;
-                    float resonanceQ = 0.1f + (detune * 4.9f);
-		    // read filter choice
-                    int filterTypeChoice = static_cast<int>(filterTypeParams[dest]->load (std::memory_order_relaxed));
-                    opFilters[dest].setType (filterTypeChoice);
-		    opFilters[dest].setCutoff (cutoffHz);
-                    opFilters[dest].setResonance (resonanceQ);
+                    // AUDIO RATE MODULATION ENGINE:
+                    // Use the modulation matrix sum to shift the filter cutoff directly!
+                    float baseCutoff = baseFrequency * ratio;
                     
-                    // Run the input signal through the filter processing stream
-                    opOutputs[dest] = opFilters[dest].processSample (audioInput);
-                    static_cast<void>(operators[dest].processSample (baseFrequency, ratio, detune, 0.0f, 0));
+                    // Scale the modulation depth so it sounds musically useful (e.g., up to 5000Hz depth)
+                    float cutoffModulation = modulationSum * 5000.0f; 
+                    float dynamicCutoff = baseCutoff + cutoffModulation;
+    
+                    // Essential stability clamp so it never hits or exceeds Nyquist
+                    float maxCutoff = static_cast<float>(safeSampleRate) * 0.49f;
+                    dynamicCutoff = juce::jlimit (20.0f, maxCutoff, dynamicCutoff);
+    
+                    // For a filter node, what are we filtering? 
+                    // Let's assume it filters the base voice frequency or external carrier input
+                    float audioInput = baseFrequency * 0.1f; 
+    
+                    opOutputs[dest] = opFilters[dest].processSampleAudioRate (audioInput, dynamicCutoff, precalculatedK[dest]);
                 }
                 else
                 {
-                    // Standard Oscillator / FM execution path
+                    float detune = detuneParams[dest]->load (std::memory_order_relaxed);
                     opOutputs[dest] = operators[dest].processSample (baseFrequency, ratio, detune, modulationSum, waveType);
                 }
-	    }
+            }
             // Save state for single-sample feedback iterations
             lastOpOutputs = opOutputs;
             // 2. Mix audible operators to output stream
@@ -155,11 +174,8 @@ public:
             // 3. Write data across available hardware output audio channels
             for (int channel = 0; channel < outputBuffer.getNumChannels(); ++channel)
             {
-                for (int s = 0; s < numSamples; ++s) // Wait, your outer loop is already handling sample indexing!
-                {
-                    // Using your original clean write command:
-                    outputBuffer.addSample (channel, startSample + sample, mixSample * level * 0.4f);
-                }
+                // Using your original clean write command:
+                outputBuffer.addSample (channel, startSample + sample, mixSample * level * 0.4f);
             }
 	}
         // The voice stays alive as long as ANY operator's envelope is still processing.

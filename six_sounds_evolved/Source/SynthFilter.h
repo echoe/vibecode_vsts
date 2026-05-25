@@ -72,10 +72,16 @@ public:
         {
             if (combBuffer.empty()) return input;
 
-            // 1. Calculate how many samples back our delay line needs to read
-            float delaySamples = static_cast<float>(sampleRate) / targetCutoff;
+            // Inside SynthFilter::processSample (Comb Section)
+            float delaySamples = static_cast<float>(sampleRate) / targetCutoff;            
+            // Safety Guard: Don't let delay exceed buffer size minus safety padding
+            float maxDelay = static_cast<float>(combBuffer.size() - 2);
+            delaySamples = juce::jlimit(1.0f, maxDelay, delaySamples);
             float readPtr = static_cast<float>(writePtr) - delaySamples;
-            if (readPtr < 0.0f) readPtr += static_cast<float>(combBuffer.size());
+            while (readPtr < 0.0f) 
+            {
+                readPtr += static_cast<float>(combBuffer.size());
+            }
 
             // 2. Perform linear interpolation for flawless, pitch-zipper-free sweeps
             int idx1 = static_cast<int>(readPtr) % combBuffer.size();
@@ -109,7 +115,55 @@ public:
             case Lowpass:  
             default:       return lp;
         }
+	if (std::isnan(s1) || std::isnan(s2) || std::isinf(s1) || std::isinf(s2))
+        {
+            reset(); // Instantly clears the registers and prevents the silent death trap
+        }
     }
+    // have a less accurate option for processing at audio rate
+    float processSampleAudioRate (float input, float cutoffHz, float precalculatedK)
+    {
+        if (currentType == Comb)
+        {
+            // Fall back to your comb processing if needed, 
+            // though comb filters require different delay modulation math.
+            return processSample(input); 
+        }
+    
+        // 1. Fast Tan Approximation for 'g'
+        // x = pi * fc / fs
+        float x = 3.1415926535f * cutoffHz / static_cast<float>(sampleRate);
+        float x2 = x * x;
+        
+        // Branchless 5th-order Padé approximant (Ultra-low CPU overhead)
+        float g_mod = x * (945.0f - 105.0f * x2 + x2 * x2) / (945.0f - 420.0f * x2 + 15.0f * x2 * x2);
+    
+        // 2. Only compute 'h' per sample. 'k' is passed in pre-calculated!
+        float h_mod = 1.0f / (1.0f + g_mod * (g_mod + precalculatedK));
+    
+        // 3. Core SVF Equation Loop
+        float hp = (input - (g_mod + precalculatedK) * s1 - s2) * h_mod;
+        float bp = g_mod * hp + s1;
+        float lp = g_mod * bp + s2;
+    
+        s1 = 2.0f * bp - s1;
+        s2 = 2.0f * lp - s2;
+    
+        // Hard fallback safety net against NaN explosion
+        if (std::isnan(s1) || std::isinf(s1)) 
+        { 
+            reset(); 
+            return 0.0f; 
+        }
+    
+        switch (currentType)
+        {
+            case Highpass: return hp;
+            case Bandpass: return bp;
+            case Lowpass:  
+            default:       return lp;
+        }
+    }    
 
 private:
     void updateCoefficients()
