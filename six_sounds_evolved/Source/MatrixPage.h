@@ -6,7 +6,12 @@
 class MatrixPage : public juce::Component
 {
 public:
-    MatrixPage (juce::AudioProcessorValueTreeState& apvts)
+    // The constructor now expects the VTS context, the parameter ID prefix, and the visual page title
+    MatrixPage (juce::AudioProcessorValueTreeState& apvts, 
+                const juce::String& prefix, 
+                const juce::String& title)
+        : paramPrefix (prefix), 
+          matrixTitle (title)
     {
         for (int src = 0; src < ProjectConfig::numOperators; ++src)
         {
@@ -18,8 +23,8 @@ public:
                 slider->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 45, 15);
                 addAndMakeVisible (slider);
 
-                // Wire it straight to the dynamic MOD_X_Y parameter ID
-                juce::String paramID = "MOD_" + juce::String (src) + "_" + juce::String (dest);
+                // Wire it straight to the dynamic parameter ID ("MOD_X_Y" or "AUDIO_ROUTE_X_Y")
+                juce::String paramID = paramPrefix + juce::String (src) + "_" + juce::String (dest);
                 matrixAttachments.add (std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, paramID, *slider));
             }
         }
@@ -29,32 +34,33 @@ public:
     {
         g.fillAll (juce::Colours::darkgrey.darker (0.3f));
         g.setColour (juce::Colours::white);
-        
+
         g.setFont (18.0f);
-        g.drawText ("Modulation Matrix", getLocalBounds().removeFromTop (40), juce::Justification::centred);
-        
+        // Uses the dynamic title variable passed via the constructor
+        g.drawText (matrixTitle, getLocalBounds().removeFromTop (40), juce::Justification::centred);
+
         g.setColour (juce::Colours::lightgrey);
         g.setFont (12.0f);
-        
+
         // Matrix Row Sources
-	for (int src = 0; src < ProjectConfig::numOperators; ++src)
+        for (int src = 0; src < ProjectConfig::numOperators; ++src)
         {
             // Calculation: Starts at 85, increases by 90 for each operator
-            int yPos = 85 + (src * 90); 
-            
-            g.drawText ("From Op " + juce::String (src + 1), 
-                        10, yPos, 80, 20, 
+            int yPos = 85 + (src * 90);
+
+            g.drawText ("From Op " + juce::String (src + 1),
+                        10, yPos, 80, 20,
                         juce::Justification::centredRight);
         }
-        
+
         // --- Matrix Column Destinations ---
         for (int dest = 0; dest < ProjectConfig::numOperators; ++dest)
         {
             // Calculation: Starts at 120, increases by 90 for each operator
-            int xPos = 100 + (dest * 90); 
-            
-            g.drawText ("To Op " + juce::String (dest + 1), 
-                        xPos, 45, 70, 20, 
+            int xPos = 100 + (dest * 90);
+
+            g.drawText ("To Op " + juce::String (dest + 1),
+                        xPos, 45, 70, 20,
                         juce::Justification::centred);
         }
     }
@@ -79,6 +85,10 @@ public:
     }
 
 private:
+    // Cached configuration strings
+    juce::String paramPrefix;
+    juce::String matrixTitle;
+
     juce::OwnedArray<juce::Slider> matrixSliders;
     juce::OwnedArray<juce::AudioProcessorValueTreeState::SliderAttachment> matrixAttachments;
 };

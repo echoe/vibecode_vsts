@@ -63,6 +63,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout FMPluginAudioProcessor::crea
             params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID {paramID, 1}, name, 0.0f, 10.0f, 0.0f));
         }
     }
+    // 2. NEW: Audio Routing Matrix Nodes (NxN Grid)
+    // This matrix determines how much raw audio signal passes from operator to operator
+    for (int src = 0; src < ProjectConfig::numOperators; ++src)
+    {
+        for (int dest = 0; dest < ProjectConfig::numOperators; ++dest)
+        {
+            juce::String paramID = "AUDIO_ROUTE_" + juce::String (src) + "_" + juce::String (dest);
+            juce::String name = "Audio Matrix: Op " + juce::String (src + 1) + " -> Op " + juce::String (dest + 1);
+            // Normalized gain between 0.0 (silent) and 1.0 (full volume pass-through)
+            params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID {paramID, 1}, name, 0.0f, 1.0f, 0.0f));
+        }
+    }
 
     // Add filter stuff
     juce::StringArray filterModes { "Bypass", "Lowpass", "Highpass", "Comb" };

@@ -49,6 +49,8 @@ public:
             {
                 juce::String matrixID = "MOD_" + juce::String (i) + "_" + juce::String (dest);
                 matrixParams[i][dest] = apvts.getRawParameterValue (matrixID);
+		juce::String audioMatrixID = "AUDIO_ROUTE_" + juce::String (i) + "_" + juce::String (dest);
+                audioMatrixParams[i][dest] = apvts.getRawParameterValue (audioMatrixID);
             }
         }
     }
@@ -73,6 +75,7 @@ public:
         baseFrequency = juce::MidiMessage::getMidiNoteInHertz (midiNoteNumber);
         level = velocity;
 	lastOpOutputs.fill (0.0f);
+	previousOpOutputs.fill (0.0f);
 
         for (int i = 0; i < ProjectConfig::numOperators; ++i)
         {
@@ -123,46 +126,74 @@ public:
         for (int sample = 0; sample < numSamples; ++sample)
         {
             std::array<float, ProjectConfig::numOperators> opOutputs { 0.0f };
-    
+        
             for (int dest = 0; dest < ProjectConfig::numOperators; ++dest)
             {
                 float modulationSum = 0.0f;
+                float audioInputSum = 0.0f;
+        
+                // Loop through all sources to read from both matrices simultaneously
                 for (int src = 0; src < ProjectConfig::numOperators; ++src)
                 {
+                    // --- GRID 1: FM PHASE MODULATION MATRIX ---
                     float modIndex = matrixParams[src][dest]->load (std::memory_order_relaxed);
-                    modulationSum += lastOpOutputs[src] * modIndex;
+                    if (modIndex > 0.0f)
+                    {
+                        // Apply two-sample smoothing rule specifically for modulation feedback loops
+                        float modSignal = (src == dest) ? (lastOpOutputs[src] + previousOpOutputs[src]) * 0.5f : lastOpOutputs[src];
+                        modulationSum += modSignal * modIndex;
+                    }
+        
+                    // --- GRID 2: RAW AUDIO ROUTING MATRIX ---
+                    float audioGain = audioMatrixParams[src][dest]->load (std::memory_order_relaxed);
+                    if (audioGain > 0.0f)
+                    {
+                        // Feed the raw un-smoothed audio output straight across the channel pipeline
+                        audioInputSum += lastOpOutputs[src] * audioGain;
+                    }
                 }
-    
+        
                 float ratio = ratioParams[dest]->load (std::memory_order_relaxed);
                 int waveType = static_cast<int> (waveParams[dest]->load (std::memory_order_relaxed));
-    
-                if (waveType == 5) // If this operator is acting as a filter
+                if (waveType == 5) // If this operator is acting as a filter node
                 {
-                    // AUDIO RATE MODULATION ENGINE:
-                    // Use the modulation matrix sum to shift the filter cutoff directly!
-                    float baseCutoff = baseFrequency * ratio;
+                    // 1. Convert the linear 0.5 to 16.0 Ratio slider into a wide, logarithmic 20Hz to 20kHz absolute cutoff frequency
+                    float ratioKnob = ratioParams[dest]->load (std::memory_order_relaxed);
+                    float normalizedKnob = (ratioKnob - 0.5f) / (16.0f - 0.5f);
+                    float baseCutoff = 20.0f * std::pow (1000.0f, normalizedKnob);
+                
+                    // 2. THE FIX: Change 'filterCutoffModSum' to 'modulationSum' to match your outer loop declaration!
+                    modulationSum = std::tanh (modulationSum * 0.2f) * 5.0f;
                     
-                    // Scale the modulation depth so it sounds musically useful (e.g., up to 5000Hz depth)
-                    float cutoffModulation = modulationSum * 5000.0f; 
-                    float dynamicCutoff = baseCutoff + cutoffModulation;
-    
-                    // Essential stability clamp so it never hits or exceeds Nyquist
+                    float modDepthParam = phaseParams[dest]->load (std::memory_order_relaxed);
+                    float scaledDepthHz = (modDepthParam / 360.0f) * 5000.0f; 
+                
+                    // Combine for the final dynamic cutoff calculation
+                    float dynamicCutoff = baseCutoff + (modulationSum * scaledDepthHz);
+                    
+                    // Core safety clamp to prevent exceeding Nyquist limit
                     float maxCutoff = static_cast<float>(safeSampleRate) * 0.49f;
                     dynamicCutoff = juce::jlimit (20.0f, maxCutoff, dynamicCutoff);
-    
-                    // For a filter node, what are we filtering? 
-                    // Let's assume it filters the base voice frequency or external carrier input
-                    float audioInput = baseFrequency * 0.1f; 
-    
-                    opOutputs[dest] = opFilters[dest].processSampleAudioRate (audioInput, dynamicCutoff, precalculatedK[dest]);
-                }
-                else
+                
+                    // Filter the raw audio stream coming from the Routing Matrix!
+                    opOutputs[dest] = opFilters[dest].processSampleAudioRate (audioInputSum, dynamicCutoff, precalculatedK[dest]);
+                }        
+		else // DESTINATION NODE IS A STANDARD OSCILLATOR
                 {
+                    // Apply traditional Phase Modulation
+                    modulationSum = std::tanh (modulationSum * 0.2f) * 5.0f;
                     float detune = detuneParams[dest]->load (std::memory_order_relaxed);
+                    
                     opOutputs[dest] = operators[dest].processSample (baseFrequency, ratio, detune, modulationSum, waveType);
+                    
+                    // Optional Additive Feature: If you want standard oscillators to also 
+                    // additively mix audio routed to them from the audio grid, you can do:
+                    // opOutputs[dest] += audioInputSum;
                 }
             }
-            // Save state for single-sample feedback iterations
+
+            // Update history buffers at the end of every sample iteration ---
+            previousOpOutputs = lastOpOutputs;
             lastOpOutputs = opOutputs;
             // 2. Mix audible operators to output stream
             float mixSample = 0.0f;
@@ -192,6 +223,7 @@ private:
     std::atomic<float>* filterTypeParams[ProjectConfig::numOperators];
     SynthFilter opFilters[ProjectConfig::numOperators];
     std::array<float, ProjectConfig::numOperators> lastOpOutputs { 0.0f };
+    std::array<float, ProjectConfig::numOperators> previousOpOutputs { 0.0f };
 
     std::array<std::atomic<float>*, ProjectConfig::numOperators> waveParams;
     std::array<std::atomic<float>*, ProjectConfig::numOperators> ratioParams;
@@ -204,7 +236,5 @@ private:
     std::array<std::atomic<float>*, ProjectConfig::numOperators> outParams;
     
     std::array<std::array<std::atomic<float>*, ProjectConfig::numOperators>, ProjectConfig::numOperators> matrixParams;
-    //from new code but maybe unnecessary
-    float previousOpOutputs[ProjectConfig::numOperators] = { 0.0f };
-    float currentNoteFrequency = 440.0f;
+    std::array<std::array<std::atomic<float>*, ProjectConfig::numOperators>, ProjectConfig::numOperators> audioMatrixParams;
 };

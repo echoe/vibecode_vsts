@@ -7,11 +7,13 @@ FMPluginAudioProcessorEditor::FMPluginAudioProcessorEditor (FMPluginAudioProcess
       audioProcessor (p),
       presetBar (p), //initialize preset bar	
       opsPage (p.apvts),     // Pass APVTS context straight down
-      matrixPage (p.apvts)   // Pass APVTS context straight down
+      matrixPage (p.apvts, "MOD_", "Modulation Matrix"),   // Pass APVTS context straight down
+      audioMatrixPage (p.apvts, "AUDIO_ROUTE_", "Routing Matrix") // APVTS context etc.
 {
     addAndMakeVisible (presetBar);
     addAndMakeVisible (opsPage);
     addAndMakeVisible (matrixPage);
+    addAndMakeVisible (audioMatrixPage);
 
     // Navigation Buttons Configuration
     addAndMakeVisible (opsPageButton);
@@ -21,6 +23,10 @@ FMPluginAudioProcessorEditor::FMPluginAudioProcessorEditor (FMPluginAudioProcess
     addAndMakeVisible (matrixPageButton);
     matrixPageButton.setButtonText ("Modulation Matrix");
     matrixPageButton.onClick = [this] { setPage (PageView::Matrix); };
+
+    addAndMakeVisible (audioMatrixPageButton);
+    audioMatrixPageButton.setButtonText ("Routing Matrix");
+    audioMatrixPageButton.onClick = [this] { setPage (PageView::AudioMatrix); };
 
     // Limiter slider:
     // Configure the Slider style
@@ -46,8 +52,14 @@ FMPluginAudioProcessorEditor::~FMPluginAudioProcessorEditor() {}
 void FMPluginAudioProcessorEditor::setPage (PageView pageToDisplay)
 {
     currentPage = pageToDisplay;
+    // Toggle visibility based on the active page enum state
     opsPage.setVisible (currentPage == PageView::Operators);
     matrixPage.setVisible (currentPage == PageView::Matrix);
+    audioMatrixPage.setVisible (currentPage == PageView::AudioMatrix);
+    // Ensure the top button highlight states visually match the current selection
+    opsPageButton.setToggleState (currentPage == PageView::Operators, juce::dontSendNotification);
+    matrixPageButton.setToggleState (currentPage == PageView::Matrix, juce::dontSendNotification);
+    audioMatrixPageButton.setToggleState (currentPage == PageView::AudioMatrix, juce::dontSendNotification);
 }
 
 void FMPluginAudioProcessorEditor::paint (juce::Graphics& g)
@@ -58,14 +70,11 @@ void FMPluginAudioProcessorEditor::paint (juce::Graphics& g)
 void FMPluginAudioProcessorEditor::resized()
 {
     auto area = getLocalBounds();
-    
     // 1. Dedicate the absolute top 40px block to Preset Management controls
     auto topBarArea = area.removeFromTop (40);
-    
     // Assuming your preset area takes up the left chunk:
     auto presetArea = topBarArea.removeFromLeft(300);
     presetBar.setBounds (presetArea.reduced (2));
-
     // 2. Head to the absolute right side of the bar to build the safety valve
     auto limiterArea = topBarArea.removeFromRight (220); 
     limiterCeilLabel.setBounds (limiterArea.removeFromLeft (45));
@@ -73,10 +82,12 @@ void FMPluginAudioProcessorEditor::resized()
 
     // 2. Dedicate the subsequent 40px block underneath to UI Navigation Page switching
     auto navArea = area.removeFromTop (40);
-    int buttonWidth = getWidth() / 2;
+    int buttonWidth = getWidth() / 3;
     opsPageButton.setBounds (navArea.removeFromLeft (buttonWidth).reduced (4));
-    matrixPageButton.setBounds (navArea.reduced (4));
+    matrixPageButton.setBounds (navArea.removeFromLeft (buttonWidth).reduced (4));
+    audioMatrixPageButton.setBounds (navArea.reduced (4)); // <-- New button placement!
     // The active page occupies the remaining container bounds
     opsPage.setBounds (area);
     matrixPage.setBounds (area);
+    audioMatrixPage.setBounds (area);
 }

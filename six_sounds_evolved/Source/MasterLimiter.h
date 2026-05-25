@@ -17,25 +17,38 @@ public:
 
     void processBlock (juce::AudioBuffer<float>& buffer, float ceilingLinear)
     {
-        // Set the ceiling just below absolute clipping (~ -0.2 dB)
-        // const float ceiling = 0.98f; 
-        
-        // 100ms release time to smoothly return the volume to normal
+        // Safety check: if ceiling is invalid or corrupted, default to a safe value
+        if (std::isnan(ceilingLinear) || std::isinf(ceilingLinear) || ceilingLinear <= 0.0f)
+            ceilingLinear = 0.95f; 
+    
         const float releaseTimeSeconds = 0.100f;
         const float releaseCoef = std::exp (-1.0f / (currentSampleRate * releaseTimeSeconds));
-
+    
         const int numChannels = buffer.getNumChannels();
         const int numSamples = buffer.getNumSamples();
-
+    
         for (int sample = 0; sample < numSamples; ++sample)
         {
-            // Find the absolute highest peak across both the left and right channels
             float peak = 0.0f;
+            
             for (int chan = 0; chan < numChannels; ++chan)
             {
-                peak = std::max (peak, std::abs (buffer.getSample (chan, sample)));
+                float s = buffer.getSample (chan, sample);
+    
+                // 1. SANITIZE INPUT: Catch NaN/Inf from an exploded synth engine instantly
+                if (std::isnan(s) || std::isinf(s))
+                {
+                    buffer.setSample(chan, sample, 0.0f);
+                    s = 0.0f;
+                }
+    
+                peak = std::max (peak, std::abs (s));
             }
-
+    
+            // 2. SANITIZE TRACKER: If the tracker somehow became NaN, force recover it
+            if (std::isnan(envelopeTracker) || std::isinf(envelopeTracker))
+                envelopeTracker = 0.0f;
+    
             // Instant-attack envelope follower
             if (peak > envelopeTracker)
             {
@@ -43,18 +56,21 @@ public:
             }
             else
             {
-                // Smooth exponential decay back down
                 envelopeTracker = peak + releaseCoef * (envelopeTracker - peak);
             }
-
-            // If the signal pushes past our safety ceiling, calculate the scaling factor
+    
+            // Calculate scaling factor
             float attenuationGain = 1.0f;
             if (envelopeTracker > ceilingLinear)
             {
                 attenuationGain = ceilingLinear / envelopeTracker;
             }
-
-            // Attenuate all channels uniformly to preserve the stereo image
+    
+            // 3. SANITIZE GAIN: Ensure attenuation factor is a valid number
+            if (std::isnan(attenuationGain) || std::isinf(attenuationGain))
+                attenuationGain = 0.0f;
+    
+            // Attenuate all channels uniformly
             for (int chan = 0; chan < numChannels; ++chan)
             {
                 float nativeSample = buffer.getSample (chan, sample);

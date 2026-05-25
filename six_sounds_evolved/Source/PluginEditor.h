@@ -8,7 +8,7 @@
 class FMPluginAudioProcessorEditor : public juce::AudioProcessorEditor
 {
 public:
-    enum class PageView { Operators, Matrix };
+    enum class PageView { Operators, Matrix, AudioMatrix };
 
     // Simply declare the constructor and destructor here. No curly braces!
     FMPluginAudioProcessorEditor (FMPluginAudioProcessor&);
@@ -20,11 +20,11 @@ public:
 
 private:
     FMPluginAudioProcessor& audioProcessor;
-
     PresetBar presetBar; // <-- Preset support
-    juce::TextButton opsPageButton, matrixPageButton, filtersPageButton;
+    juce::TextButton opsPageButton, matrixPageButton, audioMatrixPageButton;
     OperatorsPage opsPage;
     MatrixPage matrixPage;
+    MatrixPage audioMatrixPage;
 
     PageView currentPage = PageView::Operators;
     juce::Slider limiterCeilSlider;
