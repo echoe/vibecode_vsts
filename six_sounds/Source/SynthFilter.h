@@ -55,6 +55,12 @@ public:
         currentType = static_cast<FilterType>(juce::jlimit (0, 3, typeIndex));
     }
 
+    float getPrecalculatedK() const noexcept
+    {
+        // Returns the damping coefficient: k = 1 / Q
+        return 1.0f / targetResonance;
+    }
+
     void reset()
     {
         s1 = 0.0f; 

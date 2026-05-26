@@ -42,25 +42,25 @@ public:
         g.setColour (juce::Colours::lightgrey);
         g.setFont (12.0f);
 
-        // Matrix Row Sources
+        // Matrix Row Sources. Defaults declared in Constants.h
         for (int src = 0; src < ProjectConfig::numOperators; ++src)
         {
-            // Calculation: Starts at 85, increases by 90 for each operator
-            int yPos = 85 + (src * 90);
+            // Calculation: Starts at matrixXPos, increases by ProjectConfig::matrixSpacing for each operator
+            int yPos = ProjectConfig::matrixYPos - 10 + ( src * ProjectConfig::matrixSpacing) + ( ProjectConfig::matrixSpacing / 2 );
 
             g.drawText ("From Op " + juce::String (src + 1),
-                        10, yPos, 80, 20,
+                        ProjectConfig::matrixXPos - ProjectConfig::matrixSpacing, yPos, 80, 20,
                         juce::Justification::centredRight);
         }
 
         // --- Matrix Column Destinations ---
         for (int dest = 0; dest < ProjectConfig::numOperators; ++dest)
         {
-            // Calculation: Starts at 120, increases by 90 for each operator
-            int xPos = 100 + (dest * 90);
+            // Calculation: Starts at ProjectConfig::matrixYPos, increases by ProjectCofig::matrixSpacing for each operator
+            int xPos = ProjectConfig::matrixXPos + (dest * ProjectConfig::matrixSpacing);
 
             g.drawText ("To Op " + juce::String (dest + 1),
-                        xPos, 45, 70, 20,
+                        xPos - 5, ProjectConfig::matrixYPos - 10, 80, 20,
                         juce::Justification::centred);
         }
     }
@@ -68,17 +68,13 @@ public:
     void resized() override
     {
         int index = 0;
-        int startX = 100;
-        int startY = 70;
-        int spacing = 90;
-
         for (int src = 0; src < ProjectConfig::numOperators; ++src)
         {
             for (int dest = 0; dest < ProjectConfig::numOperators; ++dest)
             {
                 if (auto* slider = matrixSliders[index++])
                 {
-                    slider->setBounds (startX + (dest * spacing), startY + (src * spacing), 70, 90);
+                    slider->setBounds (ProjectConfig::matrixXPos + (dest * ProjectConfig::matrixSpacing), ProjectConfig::matrixYPos + (src * ProjectConfig::matrixSpacing), 70, 90);
                 }
             }
         }

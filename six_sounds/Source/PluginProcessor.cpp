@@ -29,15 +29,21 @@ juce::AudioProcessorValueTreeState::ParameterLayout FMPluginAudioProcessor::crea
     // Generate parameters for each operator dynamically
     for (int i = 0; i < ProjectConfig::numOperators; ++i)
     {
+	// ALL KNOB SETTINGS ARE HERE
         juce::String opNum = juce::String (i + 1);
         // Wave
 	params.push_back (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "WAVE_" + opNum, 1 }, "Op " + opNum + " Waveform", waveChoices, 0));
         params.push_back (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "FILTER_TYPE_" + opNum, 1 }, "Op " + opNum + " Filter Type", filterTypeChoices, 0));
+	// Tempo Sync
+	params.push_back (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "TEMPO_SYNC_" + opNum, 1 }, "Op " + opNum + " Tempo Sync", false));
 	// Tuning Ratios, Phase, & Detune
-        params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID {"RATIO_" + opNum, 1}, "Op " + opNum + " Ratio", 0.5f, 16.0f, 1.0f));
+        params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID {"RATIO_" + opNum, 1}, "Op " + opNum + " Ratio", 0.25f, 16.0f, 1.0f));
         params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID {"DETUNE_" + opNum, 1}, "Op " + opNum + " Detune", -50.0f, 50.0f, 0.0f));
         params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "PHASE_" + opNum, 1 }, "Op " + opNum + " Phase", 0.0f, 360.0f, 0.0f));
-        // Envelopes
+        // Filter (only Q)
+	auto qRange = juce::NormalisableRange<float> (0.1f, 10.0f, 0.01f, 0.5f);
+	params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "FILTER_Q_" + opNum, 1 }, "Op " + opNum + " Filter Q", qRange, 0.707f));
+	// Envelopes
         params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID {"ATTACK_" + opNum, 1}, "Op " + opNum + " Attack", 0.001f, 5.0f, 0.1f));
         params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID {"DECAY_" + opNum, 1}, "Op " + opNum + " Decay", 0.01f, 5.0f, 0.2f));
         params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID {"SUSTAIN_" + opNum, 1}, "Op " + opNum + " Sustain", 0.0f, 1.0f, 0.8f));
@@ -65,15 +71,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout FMPluginAudioProcessor::crea
             // Normalized gain between 0.0 (silent) and 1.0 (full volume pass-through)
             params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID {paramID, 1}, name, 0.0f, 1.0f, 0.0f));
         }
-    }
-    // Add filter stuff
-    juce::StringArray filterModes { "Bypass", "Lowpass", "Highpass", "Comb" };
-    for (int f = 1; f <= ProjectConfig::numFilters; ++f)
-    {
-        juce::String fNum = juce::String (f);
-        params.push_back (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "FILTER" + fNum + "_MODE", 1 }, "Filter " + fNum + " Mode", filterModes, 0));
-        params.push_back (std::make_unique<juce::AudioParameterFloat>  (juce::ParameterID { "FILTER" + fNum + "_FREQ", 1 }, "Filter " + fNum + " Freq", 20.0f, 20000.0f, 2000.0f));
-        params.push_back (std::make_unique<juce::AudioParameterFloat>  (juce::ParameterID { "FILTER" + fNum + "_RES",  1 }, "Filter " + fNum + " Res / FB", 0.0f, 0.95f, 0.1f));
     }
     // --- CHORUS PARAMETERS ---
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("CHORUS_MIX", "Chorus Mix", 0.0f, 1.0f, 0.0f));
@@ -143,8 +140,30 @@ void FMPluginAudioProcessor::updateVoices()
 
 void FMPluginAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
-    // a bunch of stuff around synth voices i don't fully understand
+    // Start process block
     juce::ScopedNoDenormals noDenormals;
+
+    // tempo sync
+    float activeBPM = 120.0f; // Default fallback
+    if (auto* playHead = getPlayHead())
+    {
+        auto positionInfo = playHead->getPosition();
+        if (positionInfo.hasValue())
+        {
+		activeBPM = static_cast<float> (positionInfo->getBpm().orFallback (120.0));
+        }
+    }
+
+    // 2. Safely push the BPM down into every active voice engine
+    for (int i = 0; i < synth.getNumVoices(); ++i)
+    {
+        if (auto* voice = dynamic_cast<FMVoice*> (synth.getVoice (i)))
+        {
+            voice->setDAWTempo (activeBPM);
+        }
+    }
+
+    // Continue rendering
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 

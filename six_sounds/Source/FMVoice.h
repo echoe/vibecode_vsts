@@ -15,11 +15,13 @@ public:
 	    waveParams[i] = nullptr;
             ratioParams[i] = nullptr;
             detuneParams[i] = nullptr;
+	    phaseParams[i] = nullptr;
+	    outParams[i] = nullptr;
             attackParams[i] = nullptr;
             decayParams[i] = nullptr;
             sustainParams[i] = nullptr;
             releaseParams[i] = nullptr;
-            outParams[i] = nullptr;
+	    syncParams[i] = nullptr;
 
             for (int j = 0; j < ProjectConfig::numOperators; ++j)
                 matrixParams[i][j] = nullptr;
@@ -39,11 +41,14 @@ public:
             ratioParams[i]   = apvts.getRawParameterValue ("RATIO_" + opNum);
             detuneParams[i]  = apvts.getRawParameterValue ("DETUNE_" + opNum);
 	    phaseParams[i] = apvts.getRawParameterValue ("PHASE_" + opNum);
+	    outParams[i]     = apvts.getRawParameterValue ("OUT_" + opNum);
             attackParams[i]  = apvts.getRawParameterValue ("ATTACK_" + opNum);
             decayParams[i]   = apvts.getRawParameterValue ("DECAY_" + opNum);
             sustainParams[i] = apvts.getRawParameterValue ("SUSTAIN_" + opNum);
             releaseParams[i] = apvts.getRawParameterValue ("RELEASE_" + opNum);
-            outParams[i]     = apvts.getRawParameterValue ("OUT_" + opNum);
+	    // filter
+	    qParams[i] = apvts.getRawParameterValue ("FILTER_Q_" + opNum);
+	    syncParams[i] = apvts.getRawParameterValue ("TEMPO_SYNC_" + opNum);
 
             for (int dest = 0; dest < ProjectConfig::numOperators; ++dest)
             {
@@ -104,6 +109,10 @@ public:
     void pitchWheelMoved (int newPitchWheelValue) override {}
     void controllerMoved (int controllerNumber, int newControllerValue) override {}
 
+    void setDAWTempo (float newBPM) noexcept
+    {
+        currentBPM.store (newBPM, std::memory_order_relaxed);
+    }
     void renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int startSample, int numSamples) override
     {
         if (ratioParams[0] == nullptr) return;
@@ -155,40 +164,51 @@ public:
         
                 float ratio = ratioParams[dest]->load (std::memory_order_relaxed);
                 int waveType = static_cast<int> (waveParams[dest]->load (std::memory_order_relaxed));
-                if (waveType == 5) // If this operator is acting as a filter node
+		if (waveType == 5) // If this operator is acting as a filter node
                 {
                     // 1. Convert the linear 0.5 to 16.0 Ratio slider into a wide, logarithmic 20Hz to 20kHz absolute cutoff frequency
                     float ratioKnob = ratioParams[dest]->load (std::memory_order_relaxed);
-                    float normalizedKnob = (ratioKnob - 0.5f) / (16.0f - 0.5f);
+                    float normalizedKnob = (ratioKnob - 0.25f) / (16.0f - 0.25f);
                     float baseCutoff = 20.0f * std::pow (1000.0f, normalizedKnob);
-                
-                    // 2. THE FIX: Change 'filterCutoffModSum' to 'modulationSum' to match your outer loop declaration!
+                    
+                    // Saturate and scale the incoming matrix modulation sum
                     modulationSum = std::tanh (modulationSum * 0.2f) * 5.0f;
                     
-                    float modDepthParam = phaseParams[dest]->load (std::memory_order_relaxed);
-                    float scaledDepthHz = (modDepthParam / 360.0f) * 5000.0f; 
-                
-                    // Combine for the final dynamic cutoff calculation
-                    float dynamicCutoff = baseCutoff + (modulationSum * scaledDepthHz);
+                    // Handle Q / Resonance morphing. let's catch the error
+		    float currentQ = 0.707f;
+		    if (qParams[dest] != nullptr) { float currentQ = qParams[dest]->load (std::memory_order_relaxed); }
+                    opFilters[dest].setResonance (currentQ);
+                    float currentK = opFilters[dest].getPrecalculatedK();
                     
+                    // Define the scaling factor for matrix modulation depth in Hz
+                    float scaledDepthHz = 5000.0f; 
+                
+                    // Final dynamic cutoff calculation combining base frequency and matrix modulation
+                    float dynamicCutoff = baseCutoff + (modulationSum * scaledDepthHz);
+                
                     // Core safety clamp to prevent exceeding Nyquist limit
                     float maxCutoff = static_cast<float>(safeSampleRate) * 0.49f;
                     dynamicCutoff = juce::jlimit (20.0f, maxCutoff, dynamicCutoff);
                 
                     // Filter the raw audio stream coming from the Routing Matrix!
-                    opOutputs[dest] = opFilters[dest].processSampleAudioRate (audioInputSum, dynamicCutoff, precalculatedK[dest]);
-                }        
+                    opOutputs[dest] = opFilters[dest].processSampleAudioRate (audioInputSum, dynamicCutoff, currentK);
+                }
 		else // DESTINATION NODE IS A STANDARD OSCILLATOR
                 {
                     // Apply traditional Phase Modulation
                     modulationSum = std::tanh (modulationSum * 0.2f) * 5.0f;
                     float detune = detuneParams[dest]->load (std::memory_order_relaxed);
+		    float ratio = ratioParams[dest]->load (std::memory_order_relaxed);
+		    float phaseOffset = phaseParams[dest]->load (std::memory_order_relaxed);
+		    float nodeTargetFrequency = baseFrequency;
+                    if (syncParams[dest] != nullptr && syncParams[dest]->load(std::memory_order_relaxed) > 0.5f)
+                        {
+                        float bpm = currentBPM.load (std::memory_order_relaxed);
+                        nodeTargetFrequency = bpm / 60.0f; // Calculate 1/4 Note base tracking Hz
+                    }
+		    opOutputs[dest] = operators[dest].processSample (nodeTargetFrequency, ratio, detune, modulationSum, waveType);
+                    opOutputs[dest] += audioInputSum;
                     
-                    opOutputs[dest] = operators[dest].processSample (baseFrequency, ratio, detune, modulationSum, waveType);
-                    
-                    // Optional Additive Feature: If you want standard oscillators to also 
-                    // additively mix audio routed to them from the audio grid, you can do:
-                    // opOutputs[dest] += audioInputSum;
                 }
             }
 
@@ -218,6 +238,7 @@ public:
 private:
     double baseFrequency = 440.0;
     float level = 0.0f;
+    std::atomic<float> currentBPM { 120.0f }; // Safe default
 
     std::array<FMOperator, ProjectConfig::numOperators> operators;
     std::atomic<float>* filterTypeParams[ProjectConfig::numOperators];
@@ -226,14 +247,17 @@ private:
     std::array<float, ProjectConfig::numOperators> previousOpOutputs { 0.0f };
 
     std::array<std::atomic<float>*, ProjectConfig::numOperators> waveParams;
+    // OscParams
     std::array<std::atomic<float>*, ProjectConfig::numOperators> ratioParams;
     std::array<std::atomic<float>*, ProjectConfig::numOperators> detuneParams;
     std::array<std::atomic<float>*, ProjectConfig::numOperators> phaseParams;
+    std::array<std::atomic<float>*, ProjectConfig::numOperators> outParams;
     std::array<std::atomic<float>*, ProjectConfig::numOperators> attackParams;
     std::array<std::atomic<float>*, ProjectConfig::numOperators> decayParams;
     std::array<std::atomic<float>*, ProjectConfig::numOperators> sustainParams;
     std::array<std::atomic<float>*, ProjectConfig::numOperators> releaseParams;
-    std::array<std::atomic<float>*, ProjectConfig::numOperators> outParams;
+    std::array<std::atomic<float>*, ProjectConfig::numOperators> syncParams;
+    std::array<std::atomic<float>*, ProjectConfig::numOperators> qParams;
     
     std::array<std::array<std::atomic<float>*, ProjectConfig::numOperators>, ProjectConfig::numOperators> matrixParams;
     std::array<std::array<std::atomic<float>*, ProjectConfig::numOperators>, ProjectConfig::numOperators> audioMatrixParams;
