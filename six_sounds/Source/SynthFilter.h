@@ -108,16 +108,17 @@ public:
         s1 = 2.0f * bp - s1;
         s2 = 2.0f * lp - s2;
 
+        if (std::isnan(s1) || std::isnan(s2) || std::isinf(s1) || std::isinf(s2))
+        {
+            reset(); // Instantly clears the registers and prevents the silent death trap
+            return 0.0f;
+        }
         switch (currentType)
         {
             case Highpass: return hp;
             case Bandpass: return bp;
             case Lowpass:  
             default:       return lp;
-        }
-	if (std::isnan(s1) || std::isnan(s2) || std::isinf(s1) || std::isinf(s2))
-        {
-            reset(); // Instantly clears the registers and prevents the silent death trap
         }
     }
     // have a less accurate option for processing at audio rate

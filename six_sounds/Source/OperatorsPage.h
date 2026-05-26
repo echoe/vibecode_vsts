@@ -7,8 +7,7 @@ struct CompactOperatorGroup : public juce::Component
     CompactOperatorGroup (juce::AudioProcessorValueTreeState& apvts, int opIndex)
     {
         juce::String opNum = juce::String (opIndex + 1);
-
-        // Helper to configure sliders with zero padding and miniature text entry boxes
+    
         auto setupSlider = [this] (juce::Slider& slider, juce::Label& label, const juce::String& text, bool rotary)
         {
             slider.setSliderStyle (rotary ? juce::Slider::RotaryHorizontalVerticalDrag : juce::Slider::LinearVertical);
@@ -19,24 +18,21 @@ struct CompactOperatorGroup : public juce::Component
             label.setJustificationType (juce::Justification::centred);
             addAndMakeVisible (label);
         };
-
-        // 4 Core DSP Knobs
+    
         setupSlider (ratioSlider, ratioLabel, "Rat", true);
         setupSlider (detuneSlider, detuneLabel, "Det", true);
         setupSlider (levelSlider, levelLabel, "Lvl", true);
         setupSlider (phaseSlider, phaseLabel, "Phs", true);
-
-        // 4 ADSR Envelope Sliders
+    
         setupSlider (attackSlider, attackLabel, "A", false);
         setupSlider (decaySlider, decayLabel, "D", false);
         setupSlider (sustainSlider, sustainLabel, "S", false);
         setupSlider (releaseSlider, releaseLabel, "R", false);
     
-        // Header Label & Dropdown Selector
         opHeaderLabel.setText ("OPERATOR " + opNum, juce::dontSendNotification);
         opHeaderLabel.setFont (juce::FontOptions (13.0f, juce::Font::bold));
         addAndMakeVisible (opHeaderLabel);
-
+    
         waveSelector.clear (juce::dontSendNotification);
         waveSelector.addItemList ({ "Sine", "Triangle", "Saw", "Square", "Additive" , "Filter" }, 1);
         addAndMakeVisible (waveSelector);
@@ -44,28 +40,24 @@ struct CompactOperatorGroup : public juce::Component
         filterTypeSelector.clear (juce::dontSendNotification);
         filterTypeSelector.addItemList ({ "Lowpass", "Highpass", "Bandpass", "Comb" }, 1);
         addAndMakeVisible (filterTypeSelector);
-
+    
         // Secure APVTS Links
         ratioAttach   = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "RATIO_" + opNum, ratioSlider);
         detuneAttach  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "DETUNE_" + opNum, detuneSlider);
         levelAttach   = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "OUT_" + opNum, levelSlider);
         phaseAttach   = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "PHASE_" + opNum, phaseSlider);
-
+    
         attackAttach  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "ATTACK_" + opNum, attackSlider);
         decayAttach   = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "DECAY_" + opNum, decaySlider);
         sustainAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "SUSTAIN_" + opNum, sustainSlider);
         releaseAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "RELEASE_" + opNum, releaseSlider);
         waveAttach    = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (apvts, "WAVE_" + opNum, waveSelector);
-        
-        // Connect the filter type parameter backend link
         filterTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (apvts, "FILTER_TYPE_" + opNum, filterTypeSelector);
-
-        // Dynamic Visibility and Text Relabeling Logic
+    
+        // Dynamic Visibility Rule Logic
         waveSelector.onChange = [this]()
         {
-            // Filter is item index 6 in our list allocation
             bool isFilterMode = (waveSelector.getSelectedId() == 6);
-            
             filterTypeSelector.setVisible (isFilterMode);
             
             if (isFilterMode)
@@ -79,12 +71,16 @@ struct CompactOperatorGroup : public juce::Component
                 detuneLabel.setText ("Det", juce::dontSendNotification);
             }
             
-            // Re-slice coordinates to position selectors correctly
-            resized(); 
+            // Safety Guard: Only trigger explicit redraws if the component is actually alive on screen
+            if (getWidth() > 0 && getHeight() > 0)
+            {
+                resized(); 
+            }
         };
-
-        // Initialize state configuration layout on startup
-        waveSelector.onChange();
+    
+        // Trigger initial state assignment safely without running mathematical bounds loops
+        bool isFilterMode = (waveSelector.getSelectedId() == 6);
+        filterTypeSelector.setVisible (isFilterMode);
     }
 
     void paint (juce::Graphics& g) override
@@ -156,7 +152,7 @@ public:
     // Replaced the loop instantiation code with standard JUCE formatting loops
     OperatorsPage (juce::AudioProcessorValueTreeState& apvts)
     {
-        for (int i = 0; i < 6; ++i)
+        for (int i = 0; i < ProjectConfig::numOperators; ++i)
         {
             // Instantiate and display all 6 compact sub-modules
             opModules.push_back (std::make_unique<CompactOperatorGroup> (apvts, i));

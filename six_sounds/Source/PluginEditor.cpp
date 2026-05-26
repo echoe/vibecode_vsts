@@ -8,12 +8,14 @@ FMPluginAudioProcessorEditor::FMPluginAudioProcessorEditor (FMPluginAudioProcess
       presetBar (p), //initialize preset bar	
       opsPage (p.apvts),     // Pass APVTS context straight down
       matrixPage (p.apvts, "MOD_", "Modulation Matrix"),   // Pass APVTS context straight down
-      audioMatrixPage (p.apvts, "AUDIO_ROUTE_", "Routing Matrix") // APVTS context etc.
+      audioMatrixPage (p.apvts, "AUDIO_ROUTE_", "Routing Matrix"), // APVTS context etc.
+      effectsPage (p.apvts) // APVTS context etc.
 {
     addAndMakeVisible (presetBar);
     addAndMakeVisible (opsPage);
     addAndMakeVisible (matrixPage);
     addAndMakeVisible (audioMatrixPage);
+    addAndMakeVisible (effectsPage);
 
     // Navigation Buttons Configuration
     addAndMakeVisible (opsPageButton);
@@ -27,6 +29,10 @@ FMPluginAudioProcessorEditor::FMPluginAudioProcessorEditor (FMPluginAudioProcess
     addAndMakeVisible (audioMatrixPageButton);
     audioMatrixPageButton.setButtonText ("Routing Matrix");
     audioMatrixPageButton.onClick = [this] { setPage (PageView::AudioMatrix); };
+
+    addAndMakeVisible (effectsPageButton);
+    effectsPageButton.setButtonText ("Effects");
+    effectsPageButton.onClick = [this] { setPage (PageView::Effects); };
 
     // Limiter slider:
     // Configure the Slider style
@@ -56,10 +62,12 @@ void FMPluginAudioProcessorEditor::setPage (PageView pageToDisplay)
     opsPage.setVisible (currentPage == PageView::Operators);
     matrixPage.setVisible (currentPage == PageView::Matrix);
     audioMatrixPage.setVisible (currentPage == PageView::AudioMatrix);
+    effectsPage.setVisible (currentPage == PageView::Effects);
     // Ensure the top button highlight states visually match the current selection
     opsPageButton.setToggleState (currentPage == PageView::Operators, juce::dontSendNotification);
     matrixPageButton.setToggleState (currentPage == PageView::Matrix, juce::dontSendNotification);
     audioMatrixPageButton.setToggleState (currentPage == PageView::AudioMatrix, juce::dontSendNotification);
+    effectsPageButton.setToggleState (currentPage == PageView::Effects, juce::dontSendNotification);
 }
 
 void FMPluginAudioProcessorEditor::paint (juce::Graphics& g)
@@ -82,12 +90,14 @@ void FMPluginAudioProcessorEditor::resized()
 
     // 2. Dedicate the subsequent 40px block underneath to UI Navigation Page switching
     auto navArea = area.removeFromTop (40);
-    int buttonWidth = getWidth() / 3;
+    int buttonWidth = getWidth() / 4;
     opsPageButton.setBounds (navArea.removeFromLeft (buttonWidth).reduced (4));
     matrixPageButton.setBounds (navArea.removeFromLeft (buttonWidth).reduced (4));
-    audioMatrixPageButton.setBounds (navArea.reduced (4)); // <-- New button placement!
+    audioMatrixPageButton.setBounds (navArea.removeFromLeft (buttonWidth).reduced (4));
+    effectsPageButton.setBounds (navArea.reduced (4));
     // The active page occupies the remaining container bounds
     opsPage.setBounds (area);
     matrixPage.setBounds (area);
     audioMatrixPage.setBounds (area);
+    effectsPage.setBounds (area);
 }

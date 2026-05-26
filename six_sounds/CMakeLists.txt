@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(SixSounds VERSION 1.0.0 LANGUAGES C CXX)
+project(SixSounds VERSION 1.0.1 LANGUAGES C CXX)
 
 # --- Automatically download and include JUCE ---
 include(FetchContent)
@@ -22,7 +22,7 @@ juce_add_plugin(SixSounds
     COPY_PLUGIN_AFTER_BUILD TRUE
     PLUGIN_MANUFACTURER_CODE "YCom"
     PLUGIN_PLUGIN_CODE "Sres"
-    FORMATS VST3 AU
+    FORMATS VST3 AU Standalone
     PRODUCT_NAME "SixSounds")
 
 target_sources(SixSounds PRIVATE

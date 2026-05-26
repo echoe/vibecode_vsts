@@ -2,7 +2,6 @@
 #pragma once
 #include <JuceHeader.h>
 #include "FMVoice.h"
-#include "MasterLimiter.h"
 
 // Simple dummy sound struct needed by juce::Synthesiser
 struct FMSound : public juce::SynthesiserSound
@@ -42,10 +41,17 @@ public:
     juce::AudioProcessorValueTreeState apvts;
 
 private:
+    //synth
     juce::Synthesiser synth;
-    MasterLimiter masterLimiter;
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     void updateVoices();
-
+    //effects
+    juce::dsp::ProcessSpec spec;
+    juce::dsp::Chorus<float> chorusModule;
+    juce::dsp::Reverb        reverbModule;
+    juce::dsp::Limiter<float> limiterModule;
+    juce::dsp::Reverb::Parameters reverbParams;
+    std::vector<std::vector<float>> delayBuffers;
+    int delayWriteIndex = 0;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FMPluginAudioProcessor)
 };
