@@ -1,9 +1,24 @@
-i prompted gemini and then banged on some pots and pans for a second. tada, some synths and stuff.
+I prompted gemini and then banged on some pots and pans for a second. here are some VSTs I guess??
 
-2oscfm: a 2 oscillator fm synth
 
-six sounds: a 6 oscillator fm synth where each oscillator can be a filter. this is still in development. it works but there are some gain staging issues right now as well as other ... random ... bugs.
+
+Synths:
+
+2oscfm: a 2 oscillator fm synth. the simple version of six sounds.
+
+6oscfm: a 6 oscillator fm synth. a scaled up version of 2oscfm.
+
+six sounds: a 6 oscillator fm synth where each oscillator can be a filter. this is still in development, but it works ... Okay-ish right now :)
+
+
+
+Effects:
 
 spectral resonator: theoretically a spectral resonator. but not really yet.
 
-polyrhythmic sequencer: that's what it is, wow
+
+
+MIDI Effects:
+
+polyrhythmic sequencer: I might eventually work on this. This works but basically has no GUI and has had pretty much no work put into it.
+
