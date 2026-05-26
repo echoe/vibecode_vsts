@@ -1,2 +1,3 @@
-cmake -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release;
-cmake --build build --config Release -j $(nproc)
+rm -rf build;
+cmake -B build -DCMAKE_BUILD_TYPE=Release;
+cmake --build build --config Release --parallel

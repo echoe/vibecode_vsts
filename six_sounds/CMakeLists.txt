@@ -1,59 +1,51 @@
-cmake_minimum_required(VERSION 3.15)
-project(SixSounds VERSION 0.0.2)
+cmake_minimum_required(VERSION 3.22)
+
+project(SixSounds VERSION 1.0.0 LANGUAGES C CXX)
 
 # --- Automatically download and include JUCE ---
 include(FetchContent)
 FetchContent_Declare(
     juce
     GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
-    GIT_TAG        8.0.0
+    GIT_TAG        8.0.13
 )
 FetchContent_MakeAvailable(juce)
+# ------------------------------------------------
 
-# Linux Dependencies. These need to be removed to build this on windows or mac
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(FT2 REQUIRED freetype2)
-pkg_check_modules(CURL REQUIRED libcurl)
-
-# Required JUCE Boilerplate.
 juce_add_plugin(SixSounds
-    COMPANY_NAME "echoe_vibecode"
+    COMPANY_NAME "VibecodeXtreme"
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
-    EDITOR_WANTS_KEYBOARD_FOCUS TRUE
-    NEEDS_WEB_BROWSER TRUE
-    JUCE_LOAD_CURL_SYMBOLS_LAZILY TRUE
-    FORMATS VST3 Standalone)
+    EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+    COPY_PLUGIN_AFTER_BUILD TRUE
+    PLUGIN_MANUFACTURER_CODE "YCom"
+    PLUGIN_PLUGIN_CODE "Sres"
+    FORMATS VST3 AU
+    PRODUCT_NAME "SixSounds")
 
-#Set compile definitions.
-target_compile_definitions(SixSounds PRIVATE
-    JUCE_VST3_CAN_REPLACE_VST2=0   # Fixes the VST3 conflict error
-    JUCE_WEB_BROWSER=0             # Optional: slightly faster build
-    JUCE_USE_CURL=1                # Ensures CURL is active for the build
+target_sources(SixSounds PRIVATE
+    Source/PluginProcessor.h
+    Source/PluginProcessor.cpp
+    Source/PluginEditor.h
+    Source/PluginEditor.cpp
 )
 
-# Source Files
-target_sources(SixSounds PRIVATE
-    Source/PluginProcessor.cpp
-    Source/PluginProcessor.h
-    Source/PluginEditor.cpp
-    Source/PluginEditor.h
-    Source/SynthCore.h)
+# --- ADD THIS BLOCK TO BYPASS GTK/WEBKIT DEPENDENCIES ---
+target_compile_definitions(SixSounds PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_VST3_CAN_REPLACE_VST2=0
+)
+# --------------------------------------------------------
 
-# Link Libraries & Include Directories
-target_include_directories(SixSounds PRIVATE 
-    ${FT2_INCLUDE_DIRS}
-    ${CURL_INCLUDE_DIRS})
+target_compile_features(SixSounds PRIVATE cxx_std_17)
 
 target_link_libraries(SixSounds PRIVATE
-    juce::juce_audio_utils
     juce::juce_audio_processors
     juce::juce_dsp
-    juce::juce_gui_basics
-    juce::juce_graphics
-    ${FT2_LIBRARIES}
-    ${CURL_LIBRARIES})
+    juce::juce_audio_utils
+)
 
 juce_generate_juce_header(SixSounds)
