@@ -6,8 +6,8 @@ Synth features:
 Sine, Triangle, Saw, Pulse, Additive (it's just a wave, you can't change the wave with drawbars. I kind of want to do that. It feels outside of the mission statement though).
 You can change the Ratio, detune the wave, change the phase of the wave, and change the gain of each oscillator (that's how you control whether or not the oscillator makes sound, which is important if you route a bunch of oscillators into other oscillators!).
 
--Filter types: Lowpass, Highpass, Bipole, Comb.
---You can change the cufoff, resonance, and q factor of each filter.
+-Filter types: Lowpass, Highpass, Comb.
+--You can change the cutoff, resonance, and q factor of each filter.
 
 -You can sync an oscillator to DAW tempo and use it as an LFO. Do you want more LFOs? Why have LFOs when you can just have more oscillators?
 
@@ -34,5 +34,15 @@ Pictures of the synth in use are provided in the pictures/ folder, if you are cu
 This is almost entirely AI-coded, but I did yell at the AI a fair bit, and interrupted/guided where I thought it was going wrong, pulled out a few variables ... etc. etc.
 
 ... I also ripped out the limiter myself and coded up most of the gain function because I was mad about my speakers being unhappy, so I guess that's not really AI. ... Also I wrote all of the text that isn't inside code blocks.
+
 It builds on my machine on Windows, MacOS, and Linux.
-Binaries available here: https://github.com/echoe/vibecode_vsts/releases
+Binaries available here, but they are a bit broken: https://github.com/echoe/vibecode_vsts/releases I will build again after I go through another song cycle. You can always build yourself - these builds don't have working effects and don't properly reset when looping in a DAW, among other things.
+
+I've added patches but I made these patches while making a song with the synth and was rebuilding the synth to fix bugs as I was doing so, so I can't guarantee that the patches sound fine! But I had to recover from them a bunch so they do work haha.
+
+
+Upcoming features, probably:
+-being able to modulate the modulation. Who watches the watchers? Maybe you. I'm actually a bit annoyed at the way I put modulation inside the synth right now, haha.
+
+-Exposing additional parameters within the ADSR when an oscillator is a filter (... very important to make the comb filter usable)
+-possibly additional features if I feel like it
