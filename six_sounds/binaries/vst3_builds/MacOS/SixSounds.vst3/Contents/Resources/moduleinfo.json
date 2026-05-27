@@ -1,8 +1,8 @@
 {
   "Name": "SixSounds",
-  "Version": "1.0.0",
+  "Version": "0.0.2",
   "Factory Info": {
-    "Vendor": "VibecodeXtreme",
+    "Vendor": "echoe_vibecode",
     "URL": "",
     "E-Mail": "",
     "Flags": {
@@ -13,11 +13,11 @@
   },
   "Classes": [
     {
-      "CID": "ABCDEF019182FAEB59436F6D46626C6D",
+      "CID": "ABCDEF019182FAEB4D616E7541667068",
       "Category": "Audio Module Class",
       "Name": "SixSounds",
-      "Vendor": "VibecodeXtreme",
-      "Version": "1.0.0",
+      "Vendor": "echoe_vibecode",
+      "Version": "0.0.2",
       "SDKVersion": "VST 3.8.0",
       "Sub Categories": [
         "Instrument",
@@ -29,11 +29,11 @@
       ],
     },
     {
-      "CID": "ABCDEF011234ABCD59436F6D46626C6D",
+      "CID": "ABCDEF011234ABCD4D616E7541667068",
       "Category": "Component Controller Class",
       "Name": "SixSounds",
-      "Vendor": "VibecodeXtreme",
-      "Version": "1.0.0",
+      "Vendor": "echoe_vibecode",
+      "Version": "0.0.2",
       "SDKVersion": "VST 3.8.0",
       "Sub Categories": [
         "Instrument",
