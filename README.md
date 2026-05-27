@@ -8,17 +8,16 @@ Synths:
 
 6oscfm: a 6 oscillator fm synth. a scaled up version of 2oscfm.
 
-six sounds: a 6 oscillator fm synth where each oscillator can be a filter. this is still in development, but it works ... Okay-ish right now :)
+six sounds: a 6 oscillator fm synth where each oscillator can be a filter. this is what the 2osc and 6osc synth were scaling to. it works okay-ish right now! :)
 
 
 
 Effects:
 
-spectral resonator: theoretically a spectral resonator. but not really yet.
+spectral resonator: theoretically a spectral resonator. but not really worth anything yet.
 
 
 
 MIDI Effects:
 
 polyrhythmic sequencer: I might eventually work on this. This works but basically has no GUI and has had pretty much no work put into it.
-
