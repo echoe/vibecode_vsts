@@ -13,7 +13,7 @@
   },
   "Classes": [
     {
-      "CID": "ABCDEF019182FAEB59436F6D57686772",
+      "CID": "ABCDEF019182FAEB59436F6D45686D69",
       "Category": "Audio Module Class",
       "Name": "SixSounds",
       "Vendor": "VibecodeXtreme",
@@ -29,7 +29,7 @@
       ],
     },
     {
-      "CID": "ABCDEF011234ABCD59436F6D57686772",
+      "CID": "ABCDEF011234ABCD59436F6D45686D69",
       "Category": "Component Controller Class",
       "Name": "SixSounds",
       "Vendor": "VibecodeXtreme",
