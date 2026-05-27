@@ -114,11 +114,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout FMPluginAudioProcessor::crea
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("REVERB_MIX", "Reverb Mix", 0.0f, 1.0f, 0.0f));
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("REVERB_ROOM", "Room Size", 0.0f, 1.0f, 0.5f));
     
-    // Limiter
+    // Gain
     params.push_back (std::make_unique<juce::AudioParameterFloat> (
-    juce::ParameterID { "LIMITER_CEIL", 1 }, 
-    "Limiter Ceiling", 
-    -12.0f, 0.0f, -0.2f)); // Ranges from -12dB to 0dB, default safely at -0.2dB
+    juce::ParameterID { "GAIN_CEIL", 1 }, "Gain Ceiling", juce::NormalisableRange<float> (-24.0f, 0.0f, 0.1f),-0.2f)); // Ranges from -24dB to 0dB, default at -0.2dB
     
     // This line has to be the end of this function, otherwise stuff won't process
     return { params.begin(), params.end() };
@@ -150,9 +148,17 @@ void FMPluginAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
     // Prepare Delay Buffers (Allocate enough memory for a 2-second maximum delay)
     delayBuffers.assign (spec.numChannels, std::vector<float>(static_cast<int>(sampleRate * 2.0f), 0.0f));
     delayWriteIndex = 0;
-    limiterModule.prepare (spec);
-    limiterModule.setRelease (100.0f);
-    limiterModule.setThreshold (-0.5f);
+    //oversample so we can limit better
+    // 1. Initialize 4x Oversampling (using a high-quality polyphase FIR filter)
+    oversampler = std::make_unique<juce::dsp::Oversampling<float>> (
+        spec.numChannels,
+        2, // 2^2 = 4x oversampling
+        juce::dsp::Oversampling<float>::FilterType::filterHalfBandPolyphaseIIR,
+        true,
+        true
+    );
+    oversampler->initProcessing (static_cast<size_t> (samplesPerBlock));
+    oversampler->reset();
 }
 
 void FMPluginAudioProcessor::releaseResources() {}
@@ -203,9 +209,15 @@ void FMPluginAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         buffer.clear (i, 0, buffer.getNumSamples());
     updateVoices();
     synth.renderNextBlock (buffer, midiMessages, 0, buffer.getNumSamples());
-    // effects and limiter
+    // effects
     // Create the DSP context wrapping your audio buffer
     juce::dsp::AudioBlock<float> block (buffer);
+    // apply gain control
+    if (auto* gainParam = apvts.getRawParameterValue ("GAIN_CEIL")) {
+        float masterGainLinear = juce::Decibels::decibelsToGain (gainParam->load()); // e.g., -6.0 dB
+        block.multiplyBy (masterGainLinear);
+    }
+    auto oversampledBlock = oversampler->processSamplesUp (block);
     juce::dsp::ProcessContextReplacing<float> context (block);
     // chorus first
     if (auto* cMix = apvts.getRawParameterValue ("CHORUS_MIX"))
@@ -270,13 +282,17 @@ void FMPluginAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     }
     reverbModule.setParameters (reverbParams);
     reverbModule.process (context);
-    // finally, brickwall limiter
-    if (auto* ceilingParam = apvts.getRawParameterValue ("LIMITER_CEIL"))
+    // soft clipper. i tried a brickwall limiter and hoo boy does it not work
+    for (size_t channel = 0; channel < oversampledBlock.getNumChannels(); ++channel)
     {
-        // juce::dsp::Limiter takes values directly in Decibels (dB)
-        limiterModule.setThreshold (ceilingParam->load());
+        auto* channelData = oversampledBlock.getChannelPointer (channel);
+        
+        for (size_t sample = 0; sample < oversampledBlock.getNumSamples(); ++sample)
+        {
+            channelData[sample] = std::tanh (channelData[sample]);
+        }
     }
-    limiterModule.process (context);
+    oversampler->processSamplesDown (block);
 }
 
 juce::AudioProcessorEditor* FMPluginAudioProcessor::createEditor()

@@ -29,8 +29,8 @@ private:
     EffectsPage effectsPage;
 
     PageView currentPage = PageView::Operators;
-    juce::Slider limiterCeilSlider;
-    juce::Label limiterCeilLabel;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> limiterCeilAttach;
+    juce::Slider gainSlider;
+    juce::Label gainLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> gainAttach;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FMPluginAudioProcessorEditor)
 };

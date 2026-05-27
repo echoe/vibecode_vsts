@@ -89,8 +89,8 @@ private:
             {
                 juce::String paramID = rangedParam->getParameterID();
                 
-                // CRITICAL SAFETY NET: Absolutely lock out your limiter parameters!
-                if (paramID.containsIgnoreCase ("LIMITER")) 
+                // lock out
+                if (paramID.containsIgnoreCase ("GAIN"))
                     continue;
 
                 bool shouldRandomize = false;

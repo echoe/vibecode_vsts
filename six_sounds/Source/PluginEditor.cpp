@@ -34,20 +34,20 @@ FMPluginAudioProcessorEditor::FMPluginAudioProcessorEditor (FMPluginAudioProcess
     effectsPageButton.setButtonText ("Effects");
     effectsPageButton.onClick = [this] { setPage (PageView::Effects); };
 
-    // Limiter slider:
+    // Gain slider, since a JUCE limiter simply does not work
     // Configure the Slider style
-    limiterCeilSlider.setSliderStyle (juce::Slider::LinearHorizontal);
-    limiterCeilSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 45, 18);
-    addAndMakeVisible (limiterCeilSlider);
+    gainSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    gainSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 45, 18);
+    addAndMakeVisible (gainSlider);
 
     // Add a text label
-    limiterCeilLabel.setText ("Limit", juce::dontSendNotification);
-    limiterCeilLabel.setJustificationType (juce::Justification::centredRight);
-    addAndMakeVisible (limiterCeilLabel);
+    gainLabel.setText ("Gain", juce::dontSendNotification);
+    gainLabel.setJustificationType (juce::Justification::centredRight);
+    addAndMakeVisible (gainLabel);
 
     // Secure the attachment bridge
-    limiterCeilAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-        p.apvts, "LIMITER_CEIL", limiterCeilSlider);
+    gainAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        p.apvts, "GAIN_CEIL", gainSlider);
 
     setPage (PageView::Operators);
     setSize (950, 680); // Expanded boundary footprint to comfortably show labels
@@ -84,9 +84,9 @@ void FMPluginAudioProcessorEditor::resized()
     auto presetArea = topBarArea.removeFromLeft(300);
     presetBar.setBounds (presetArea.reduced (2));
     // 2. Head to the absolute right side of the bar to build the safety valve
-    auto limiterArea = topBarArea.removeFromRight (220); 
-    limiterCeilLabel.setBounds (limiterArea.removeFromLeft (45));
-    limiterCeilSlider.setBounds (limiterArea.reduced (2));
+    auto gainArea = topBarArea.removeFromRight (220);
+    gainLabel.setBounds (gainArea.removeFromLeft (45));
+    gainSlider.setBounds (gainArea.reduced (2));
 
     // 2. Dedicate the subsequent 40px block underneath to UI Navigation Page switching
     auto navArea = area.removeFromTop (40);

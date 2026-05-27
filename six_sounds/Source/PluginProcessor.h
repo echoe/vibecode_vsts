@@ -49,7 +49,7 @@ private:
     juce::dsp::ProcessSpec spec;
     juce::dsp::Chorus<float> chorusModule;
     juce::dsp::Reverb        reverbModule;
-    juce::dsp::Limiter<float> limiterModule;
+    std::unique_ptr<juce::dsp::Oversampling<float>> oversampler;
     juce::dsp::Reverb::Parameters reverbParams;
     std::vector<std::vector<float>> delayBuffers;
     int delayWriteIndex = 0;
