@@ -1,4 +1,4 @@
-A six sound synthesizer.
+A synthesizer with six sounds. You mix them together. Then you get a lotta sounds.
 
 Synth options:
 
@@ -10,8 +10,8 @@ Synth options:
 -You can pass audio into an oscillator with the audio routing matrix too, so you can .
 -Preset support.
 -Incredibly simple randomization.
--An Init button to avoid the randomization.
--A limiter to attempt to not deafen everyone who uses this synth (optimistic).
+-An Init button to avoid the randomization when it becomes really too much.
+-A gain function to attempt to not deafen everyone who uses this synth (optimistic, not working as well as I'd like right now).
 
 Pictures are provided in the pictures folder. Builds are provided in the vst3\_builds folder.
 
