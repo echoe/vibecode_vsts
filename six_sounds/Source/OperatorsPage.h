@@ -144,7 +144,7 @@ private:
         if (isFilterMode)
         {
             ratioLabel.setText ("Cutoff", juce::dontSendNotification);
-            detuneLabel.setText ("Resolution", juce::dontSendNotification);
+            detuneLabel.setText ("Resonance", juce::dontSendNotification);
             phaseLabel.setText ("Q", juce::dontSendNotification);
     
             phaseSlider.setRange (0.1, 10.0, 0.01);

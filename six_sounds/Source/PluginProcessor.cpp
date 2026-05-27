@@ -38,7 +38,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout FMPluginAudioProcessor::crea
         // Tempo Sync
         params.push_back (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "TEMPO_SYNC_" + opNum, 1 }, "Op " + opNum + " Tempo Sync", false));
         // Tuning Ratios, Phase, & Detune
-        params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID {"RATIO_" + opNum, 1}, "Op " + opNum + " Ratio", 0.25f, 16.0f, 1.0f));
+        params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID {"RATIO_" + opNum, 1}, "Op " + opNum + " Ratio", 0.01f, 16.0f, 1.0f));
         params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID {"DETUNE_" + opNum, 1}, "Op " + opNum + " Detune", -50.0f, 50.0f, 0.0f));
         params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "PHASE_" + opNum, 1 }, "Op " + opNum + " Phase", 0.0f, 360.0f, 0.0f));
         // Filter (only Q)
@@ -299,8 +299,33 @@ void FMPluginAudioProcessor::setStateInformation (const void* data, int sizeInBy
     if (xmlState != nullptr && xmlState->hasTagName (apvts.state.getType()))
         apvts.replaceState (juce::ValueTree::fromXml (*xmlState));
 }
+// avoiding issues when looping sounds in VSTs
+void FMPluginAudioProcessor::reset()
+{
+    // 1. Clear the custom delay vectors completely
+    for (auto& channelBuffer : delayBuffers)
+    {
+        std::fill (channelBuffer.begin(), channelBuffer.end(), 0.0f);
+    }
+    delayWriteIndex = 0;
 
-// This function fixes your 'undefined reference to createPluginFilter()' error!
+    // 2. Clear JUCE native effects states
+    chorusModule.reset();
+    reverbModule.reset();
+    
+    // 3. Tell the synth engine to kill hanging voice notes
+    synth.allNotesOff (0, false);
+    // also clear filters, which aren't cleared by the above
+    for (int i = 0; i < synth.getNumVoices(); ++i)
+        {
+            if (auto* voice = dynamic_cast<FMVoice*> (synth.getVoice (i)))
+            {
+                voice->resetVoiceState();
+            }
+        }
+}
+
+// Necessary to avoid createPluginFilter()' error
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new FMPluginAudioProcessor();

@@ -77,7 +77,7 @@ private:
         }
     }
 
-    // Surgical Targeted Randomizer Engine
+    // Targeted Randomizer Engine
     void triggerRandomizer (RandomTarget target)
     {
         auto& prng = juce::Random::getSystemRandom();
@@ -99,7 +99,7 @@ private:
                 {
                     case RandomTarget::OperatorsAndEnvelopes:
                         // Randomize if it is NOT a row/column cell in either grid matrix
-                        if (!paramID.startsWith ("MOD_") && !paramID.startsWith ("AUDIO_ROUTE_"))
+                        if (!paramID.startsWith ("MOD_") && !paramID.startsWith ("AUDIO_ROUTE_") && !paramID.startsWith ("FOCUSED_"))
                             shouldRandomize = true;
                         break;
 

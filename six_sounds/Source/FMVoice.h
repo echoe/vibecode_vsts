@@ -99,8 +99,10 @@ public:
     {
         baseFrequency = juce::MidiMessage::getMidiNoteInHertz (midiNoteNumber);
         level = velocity;
+        // clear history of audio so we don't get stuff carried over from voice to voice causing bad sounds
         lastOpOutputs.fill (0.0f);
         previousOpOutputs.fill (0.0f);
+        processedOpOutputs.fill (0.0f);
 
         for (int i = 0; i < ProjectConfig::numOperators; ++i)
         {
@@ -133,10 +135,43 @@ public:
     {
         currentBPM.store (newBPM, std::memory_order_relaxed);
     }
+    
+    void resetVoiceState()
+    {
+        // 1. Clear sample-to-sample feedback arrays completely
+        lastOpOutputs.fill (0.0f);
+        previousOpOutputs.fill (0.0f);
+        processedOpOutputs.fill (0.0f);
+
+        // 2. Clear the historical state registers of every internal operator filter
+        for (int i = 0; i < ProjectConfig::numOperators; ++i)
+        {
+            opFilters[i].reset(); // Purges internal biquad history registers
+            operators[i].resetPhase (0.0f); // Resets the oscillator lookup indexes
+        }
+    }
 
     void renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int startSample, int numSamples) override
     {
         if (ratioParams[0] == nullptr) return;
+        // let's make sure we don't act up around loops
+        bool isAnyEnvelopeActive = false;
+        for (int i = 0; i < ProjectConfig::numOperators; ++i)
+        {
+            if (operators[i].isActive()) // Check if the underlying ADSR is still ticking
+            {
+                isAnyEnvelopeActive = true;
+                break;
+            }
+        }
+
+        if (!isAnyEnvelopeActive)
+        {
+            // If no notes are sustaining, historical arrays MUST be pure silence.
+            lastOpOutputs.fill (0.0f);
+            previousOpOutputs.fill (0.0f);
+            processedOpOutputs.fill (0.0f);
+        }
     
         double safeSampleRate = getSampleRate() > 0.0 ? getSampleRate() : 44100.0;
     
@@ -206,6 +241,8 @@ public:
                         if (modIndex > 0.0f)
                         {
                             float modSignal = (src == dest) ? (lastOpOutputs[src] + previousOpOutputs[src]) * 0.5f : lastOpOutputs[src];
+                            // this makes it safe and react more like the DX7
+                            float scaledIndex = modIndex * juce::MathConstants<float>::pi;
                             modulationSum += modSignal * modIndex;
                         }
             
@@ -216,12 +253,7 @@ public:
                             audioInputSum += lastOpOutputs[src] * audioGain;
                         }
                     }
-
-                    // =================================================================
-                    // AUTOMATIC GAIN STAGING CUSHION
-                    // Protect the audio input node from adding up into engine-killing peaks.
-                    // This guarantees the sum going into filters/oscillators stays within [-1.0, 1.0]
-                    // =================================================================
+                    // GAIN STAGING CUSHION
                     audioInputSum = std::tanh (audioInputSum);
                     // =================================================================
                     
@@ -264,12 +296,16 @@ public:
                             float bpm = currentBPM.load (std::memory_order_relaxed);
                             nodeTargetFrequency = bpm / 60.0f;
                         }
-
-                        // Apply Pitch Modulation (Linear depth range up to +/- 600 Hz per node connection)
-                        float modulatedFreq = nodeTargetFrequency + (pitchModOffsets[dest] * 600.0f);
-                        modulatedFreq = juce::jlimit(1.0f, static_cast<float>(safeSampleRate) * 0.49f, modulatedFreq);
-
-                        modulationSum = std::tanh (modulationSum * 0.2f) * 5.0f;
+                        // EXPONENTIAL PITCH MODULATION (Protects against internal phase clipping)
+                        // Multiplying by 12.0f means the matrix can modulate pitch by +/- 12 semitones (1 Octave).
+                        // =================================================================
+                        float semitoneOffset = pitchModOffsets[dest] * 12.0f;
+                        float modulatedFreq = nodeTargetFrequency * std::pow (2.0f, semitoneOffset / 12.0f);
+                        modulatedFreq = juce::jlimit(0.1f, static_cast<float>(safeSampleRate) * 0.49f, modulatedFreq);
+                        // =================================================================
+                        // Stabilize the output path phasesum - testing. normal is below
+                        modulationSum = std::tanh (modulationSum * 0.15f) * (juce::MathConstants<float>::pi * 2.0f);
+                        //modulationSum = std::tanh (modulationSum * 0.2f) * 5.0f;
                                 
                         // Apply Phase Offset Modulation
                         float phaseOffset = phaseParams[dest]->load (std::memory_order_relaxed) + (phaseModOffsets[dest] * 360.0f);
@@ -301,10 +337,15 @@ public:
                 float outLevel = outParams[i]->load (std::memory_order_relaxed);
                 mixSample += processedOpOutputs[i] * outLevel; // Use the modulated signals for the master output
             }
-
+            // --- MASTER GAIN COMPENSATION FOR POLYPHONY ---
+            // A cushion of 1.0 / sqrt(numVoices) is the standard musical way to keep
+            // volume stable without making single notes sound too quiet.
+            float polyphonyCushion = 1.0f / std::sqrt (static_cast<float> (ProjectConfig::numOperators));
             for (int channel = 0; channel < outputBuffer.getNumChannels(); ++channel)
             {
-                outputBuffer.addSample (channel, startSample + sample, mixSample * level * 0.4f);
+                // Combine level, your safety cushion, and a reasonable master scalar
+                float finalGain = level * polyphonyCushion * 0.5f;
+                outputBuffer.addSample (channel, startSample + sample, mixSample * finalGain);
             }
         }
 
