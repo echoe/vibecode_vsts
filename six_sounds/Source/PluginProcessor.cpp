@@ -148,17 +148,6 @@ void FMPluginAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
     // Prepare Delay Buffers (Allocate enough memory for a 2-second maximum delay)
     delayBuffers.assign (spec.numChannels, std::vector<float>(static_cast<int>(sampleRate * 2.0f), 0.0f));
     delayWriteIndex = 0;
-    //oversample so we can limit better
-    // 1. Initialize 4x Oversampling (using a high-quality polyphase FIR filter)
-    oversampler = std::make_unique<juce::dsp::Oversampling<float>> (
-        spec.numChannels,
-        2, // 2^2 = 4x oversampling
-        juce::dsp::Oversampling<float>::FilterType::filterHalfBandPolyphaseIIR,
-        true,
-        true
-    );
-    oversampler->initProcessing (static_cast<size_t> (samplesPerBlock));
-    oversampler->reset();
 }
 
 void FMPluginAudioProcessor::releaseResources() {}
@@ -217,7 +206,6 @@ void FMPluginAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         float masterGainLinear = juce::Decibels::decibelsToGain (gainParam->load()); // e.g., -6.0 dB
         block.multiplyBy (masterGainLinear);
     }
-    auto oversampledBlock = oversampler->processSamplesUp (block);
     juce::dsp::ProcessContextReplacing<float> context (block);
     // chorus first
     if (auto* cMix = apvts.getRawParameterValue ("CHORUS_MIX"))
@@ -282,17 +270,15 @@ void FMPluginAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     }
     reverbModule.setParameters (reverbParams);
     reverbModule.process (context);
-    // soft clipper. i tried a brickwall limiter and hoo boy does it not work
-    for (size_t channel = 0; channel < oversampledBlock.getNumChannels(); ++channel)
+    // emergency soft clipper. i tried a brickwall limiter and hoo boy does it not work
+    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
     {
-        auto* channelData = oversampledBlock.getChannelPointer (channel);
-        
-        for (size_t sample = 0; sample < oversampledBlock.getNumSamples(); ++sample)
+        auto* channelData = buffer.getWritePointer (channel);
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
         {
             channelData[sample] = std::tanh (channelData[sample]);
         }
     }
-    oversampler->processSamplesDown (block);
 }
 
 juce::AudioProcessorEditor* FMPluginAudioProcessor::createEditor()
