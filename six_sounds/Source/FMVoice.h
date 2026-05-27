@@ -195,94 +195,105 @@ public:
             }
         
             for (int dest = 0; dest < ProjectConfig::numOperators; ++dest)
-            {
-                float modulationSum = 0.0f;
-                float audioInputSum = 0.0f;
-        
-                for (int src = 0; src < ProjectConfig::numOperators; ++src)
                 {
-                    // --- GRID 1: FM PHASE MODULATION MATRIX ---
-                    float modIndex = matrixParams[src][dest]->load (std::memory_order_relaxed);
-                    if (modIndex > 0.0f)
+                    float modulationSum = 0.0f;
+                    float audioInputSum = 0.0f;
+            
+                    for (int src = 0; src < ProjectConfig::numOperators; ++src)
                     {
-                        float modSignal = (src == dest) ? (lastOpOutputs[src] + previousOpOutputs[src]) * 0.5f : lastOpOutputs[src];
-                        modulationSum += modSignal * modIndex;
-                    }
-        
-                    // --- GRID 2: RAW AUDIO ROUTING MATRIX ---
-                    float audioGain = audioMatrixParams[src][dest]->load (std::memory_order_relaxed);
-                    if (audioGain > 0.0f)
-                    {
-                        audioInputSum += lastOpOutputs[src] * audioGain;
-                    }
-                }
-        
-                float ratio = ratioParams[dest]->load (std::memory_order_relaxed);
-                int waveType = static_cast<int> (waveParams[dest]->load (std::memory_order_relaxed));
-                
-                if (waveType == 5) // If this operator is acting as a filter node
-                {
-                    float ratioKnob = ratioParams[dest]->load (std::memory_order_relaxed);
-                    float normalizedKnob = (ratioKnob - 0.25f) / (16.0f - 0.25f);
-                    float baseCutoff = 20.0f * std::pow (1000.0f, normalizedKnob);
-                    
-                    modulationSum = std::tanh (modulationSum * 0.2f) * 5.0f;
-                    
-                    float currentQ = 0.707f;
-                    if (qParams[dest] != nullptr) { currentQ = qParams[dest]->load (std::memory_order_relaxed); }
-                    
-                    // Apply Resonance Modulation (Safely clamp results to prevent biquad explosions)
-                    currentQ += (qModOffsets[dest] * 5.0f);
-                    currentQ = juce::jlimit (0.05f, 25.0f, currentQ);
-                    
-                    opFilters[dest].setResonance (currentQ);
-                    float currentK = opFilters[dest].getPrecalculatedK();
-                    
-                    float scaledDepthHz = 5000.0f; 
-                    
-                    // Apply Cutoff Modulation (Adds directly to the physical mapping path)
-                    float dynamicCutoff = baseCutoff + (modulationSum * scaledDepthHz) + (cutoffModOffsets[dest] * 4000.0f);
-                
-                    float maxCutoff = static_cast<float>(safeSampleRate) * 0.49f;
-                    dynamicCutoff = juce::jlimit (20.0f, maxCutoff, dynamicCutoff);
-                
-                    opOutputs[dest] = opFilters[dest].processSampleAudioRate (audioInputSum, dynamicCutoff, currentK);
-                }
-                else // DESTINATION NODE IS A STANDARD OSCILLATOR
-                {
-                    float nodeTargetFrequency = baseFrequency;
-                    if (syncParams[dest] != nullptr && syncParams[dest]->load(std::memory_order_relaxed) > 0.5f)
-                    {
-                        float bpm = currentBPM.load (std::memory_order_relaxed);
-                        nodeTargetFrequency = bpm / 60.0f; 
+                        // --- GRID 1: FM PHASE MODULATION MATRIX ---
+                        float modIndex = matrixParams[src][dest]->load (std::memory_order_relaxed);
+                        if (modIndex > 0.0f)
+                        {
+                            float modSignal = (src == dest) ? (lastOpOutputs[src] + previousOpOutputs[src]) * 0.5f : lastOpOutputs[src];
+                            modulationSum += modSignal * modIndex;
+                        }
+            
+                        // --- GRID 2: RAW AUDIO ROUTING MATRIX ---
+                        float audioGain = audioMatrixParams[src][dest]->load (std::memory_order_relaxed);
+                        if (audioGain > 0.0f)
+                        {
+                            audioInputSum += lastOpOutputs[src] * audioGain;
+                        }
                     }
 
-                    // Apply Pitch Modulation (Linear depth range up to +/- 600 Hz per node connection)
-                    float modulatedFreq = nodeTargetFrequency + (pitchModOffsets[dest] * 600.0f);
-                    modulatedFreq = juce::jlimit(1.0f, static_cast<float>(safeSampleRate) * 0.49f, modulatedFreq);
-
-                    modulationSum = std::tanh (modulationSum * 0.2f) * 5.0f;
+                    // =================================================================
+                    // AUTOMATIC GAIN STAGING CUSHION
+                    // Protect the audio input node from adding up into engine-killing peaks.
+                    // This guarantees the sum going into filters/oscillators stays within [-1.0, 1.0]
+                    // =================================================================
+                    audioInputSum = std::tanh (audioInputSum);
+                    // =================================================================
                     
-                    // Apply Phase Offset Modulation
-                    float phaseOffset = phaseParams[dest]->load (std::memory_order_relaxed) + (phaseModOffsets[dest] * 360.0f);
-                    float detune = detuneParams[dest]->load (std::memory_order_relaxed);
+                    float ratio = ratioParams[dest]->load (std::memory_order_relaxed);
+                    int waveType = static_cast<int> (waveParams[dest]->load (std::memory_order_relaxed));
                     
-                    opOutputs[dest] = operators[dest].processSample (modulatedFreq, ratio, detune, modulationSum, waveType);
-                    opOutputs[dest] += audioInputSum;
-                }
-                
-                // Store structural modifications inside an internal matrix processing cache layer
-                processedOpOutputs[dest] = opOutputs[dest];
-                
-                // Apply dynamic Amplitude/Level modulation to the audio array
-                if (std::abs(levelModOffsets[dest]) > 0.001f)
-                {
-                    processedOpOutputs[dest] *= juce::jlimit(0.0f, 2.0f, 1.0f + levelModOffsets[dest]);
-                }
-            }
+                    if (waveType == 5) // If this operator is acting as a filter node
+                    {
+                        float ratioKnob = ratioParams[dest]->load (std::memory_order_relaxed);
+                        float normalizedKnob = (ratioKnob - 0.25f) / (16.0f - 0.25f);
+                        float baseCutoff = 20.0f * std::pow (1000.0f, normalizedKnob);
+                        
+                        modulationSum = std::tanh (modulationSum * 0.2f) * 5.0f;
+                        
+                        float currentQ = 0.707f;
+                        if (qParams[dest] != nullptr) { currentQ = qParams[dest]->load (std::memory_order_relaxed); }
+                                
+                        // Apply Resonance Modulation (Safely clamp results to prevent biquad explosions)
+                        currentQ += (qModOffsets[dest] * 5.0f);
+                        currentQ = juce::jlimit (0.05f, 25.0f, currentQ);
+                                
+                        opFilters[dest].setResonance (currentQ);
+                        float currentK = opFilters[dest].getPrecalculatedK();
+                                
+                        float scaledDepthHz = 5000.0f;
+                        
+                        // Apply Cutoff Modulation (Adds directly to the physical mapping path)
+                        float dynamicCutoff = baseCutoff + (modulationSum * scaledDepthHz) + (cutoffModOffsets[dest] * 4000.0f);
+                            
+                        float maxCutoff = static_cast<float>(safeSampleRate) * 0.49f;
+                        dynamicCutoff = juce::jlimit (20.0f, maxCutoff, dynamicCutoff);
+                            
+                        opOutputs[dest] = opFilters[dest].processSampleAudioRate (audioInputSum, dynamicCutoff, currentK);
+                    }
+                    else // DESTINATION NODE IS A STANDARD OSCILLATOR
+                    {
+                        float nodeTargetFrequency = baseFrequency;
+                        if (syncParams[dest] != nullptr && syncParams[dest]->load(std::memory_order_relaxed) > 0.5f)
+                        {
+                            float bpm = currentBPM.load (std::memory_order_relaxed);
+                            nodeTargetFrequency = bpm / 60.0f;
+                        }
 
+                        // Apply Pitch Modulation (Linear depth range up to +/- 600 Hz per node connection)
+                        float modulatedFreq = nodeTargetFrequency + (pitchModOffsets[dest] * 600.0f);
+                        modulatedFreq = juce::jlimit(1.0f, static_cast<float>(safeSampleRate) * 0.49f, modulatedFreq);
+
+                        modulationSum = std::tanh (modulationSum * 0.2f) * 5.0f;
+                                
+                        // Apply Phase Offset Modulation
+                        float phaseOffset = phaseParams[dest]->load (std::memory_order_relaxed) + (phaseModOffsets[dest] * 360.0f);
+                        float detune = detuneParams[dest]->load (std::memory_order_relaxed);
+                                
+                        opOutputs[dest] = operators[dest].processSample (modulatedFreq, ratio, detune, modulationSum, waveType);
+                                
+                        // CRITICAL STABILITY: Soft-clip the sum here too so adding the node audio
+                        // doesn't clip the operator output tracking step immediately below.
+                        opOutputs[dest] = std::tanh (opOutputs[dest] + audioInputSum);
+                    }
+                            
+                    // Store structural modifications inside an internal matrix processing cache layer
+                    processedOpOutputs[dest] = opOutputs[dest];
+                            
+                    // Apply dynamic Amplitude/Level modulation to the audio array
+                    if (std::abs(levelModOffsets[dest]) > 0.001f)
+                    {
+                        processedOpOutputs[dest] *= juce::jlimit(0.0f, 2.0f, 1.0f + levelModOffsets[dest]);
+                    }
+                }
             previousOpOutputs = lastOpOutputs;
-            lastOpOutputs = opOutputs; // Raw tracking is used for baseline feedback mod paths
+            // lastOpOutputs = opOutputs; // this would be if you want the raw output and not the processed stuff tracking update
+            lastOpOutputs = processedOpOutputs; // Use finalized, gain-staged outputs for history tracking!
 
             float mixSample = 0.0f;
             for (int i = 0; i < ProjectConfig::numOperators; ++i)
