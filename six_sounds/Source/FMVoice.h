@@ -156,6 +156,7 @@ public:
 
     void renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int startSample, int numSamples) override
     {
+	if (!isVoiceActive()) return;
         if (ratioParams[0] == nullptr) return;
         // let's make sure we don't act up around loops
         bool isAnyEnvelopeActive = false;
