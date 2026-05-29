@@ -46,3 +46,9 @@ Upcoming features, probably:
 
 -Exposing additional parameters within the ADSR when an oscillator is a filter (... very important to make the comb filter usable)
 -possibly additional features if I feel like it
+
+Here's my current goals:
+-getting the comb filter's extra parameters accessible in the GUI
+-setting up the additive mode (4 partials?)
+-replacing the three-lane modulation area with a simpler and more usable 6 slots of modulation where you can modulate anything in the synth with anything else in the synth
+Then I'll see how my current presets work, see if I can re-simplify the code, and go from there.
