@@ -34,13 +34,17 @@ struct CompactOperatorGroup : public juce::Component
         opHeaderLabel.setFont (juce::FontOptions (13.0f, juce::Font::bold));
         addAndMakeVisible (opHeaderLabel);
 
-	syncButton.setButtonText ("Sync");
+        syncButton.setButtonText ("Sync");
         syncButton.setClickingTogglesState (true);
         addAndMakeVisible (syncButton);
-    
-        waveSelector.clear (juce::dontSendNotification);
-        waveSelector.addItemList ({ "Sine", "Triangle", "Saw", "Square", "Additive" , "Filter" }, 1);
-        addAndMakeVisible (waveSelector);
+        
+        modeSelector.clear (juce::dontSendNotification);
+        modeSelector.addItemList ({ "Wave", "Additive", "Filter" }, 1);
+        addAndMakeVisible (modeSelector);
+
+        waveShapeSelector.clear (juce::dontSendNotification);
+        waveShapeSelector.addItemList ({ "Sine", "Triangle", "Saw", "Square" }, 1);
+        addAndMakeVisible (waveShapeSelector);
         
         filterTypeSelector.clear (juce::dontSendNotification);
         filterTypeSelector.addItemList ({ "Lowpass", "Highpass", "Bandpass", "Comb" }, 1);
@@ -57,11 +61,12 @@ struct CompactOperatorGroup : public juce::Component
         decayAttach   = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "DECAY_" + opNum, decaySlider);
         sustainAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "SUSTAIN_" + opNum, sustainSlider);
         releaseAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "RELEASE_" + opNum, releaseSlider);
-        waveAttach    = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (apvts, "WAVE_" + opNum, waveSelector);
+        modeAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (apvts, "MODE_" + opNum, modeSelector);
+        waveShapeAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (apvts, "WAVE_SHAPE_" + opNum, waveShapeSelector);
         filterTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (apvts, "FILTER_TYPE_" + opNum, filterTypeSelector);
    
         // Dynamic Visibility Rule Logic using safe value captures
-        waveSelector.onChange = [this, &apvts, opNum]()
+        modeSelector.onChange = [this, &apvts, opNum]()
         {
             updateKnobFunction(apvts, opNum);
         };
@@ -135,22 +140,26 @@ private:
     // Dedicated method handles the attachment mutation cleanly
     void updateKnobFunction (juce::AudioProcessorValueTreeState& apvts, const juce::String& opNum)
     {
-        bool isFilterMode = (waveSelector.getSelectedId() == 6);
+        int selectedMode = modeSelector.getSelectedId();
+        bool isWaveMode = (selectedMode == 1);
+        bool isFilterMode = (selectedMode == 3);
+
+        waveShapeSelector.setVisible (isWaveMode);
         filterTypeSelector.setVisible (isFilterMode);
-    
-        // Fixed: Use phaseAttach instead of phaseAttachment
+
         phaseAttach.reset();
-    
+
         if (isFilterMode)
         {
+            // UI assumes audio is piped from other internal oscillators via the modulation matrix
             ratioLabel.setText ("Cutoff", juce::dontSendNotification);
             detuneLabel.setText ("Resonance", juce::dontSendNotification);
             phaseLabel.setText ("Q", juce::dontSendNotification);
-    
+
             phaseSlider.setRange (0.1, 10.0, 0.01);
-            phaseSlider.setSkewFactorFromMidPoint (1.5); 
+            phaseSlider.setSkewFactorFromMidPoint (1.5);
             phaseSlider.setTextValueSuffix ("");
-    
+
             phaseAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                 apvts, "FILTER_Q_" + opNum, phaseSlider);
         }
@@ -159,15 +168,15 @@ private:
             ratioLabel.setText ("Ratio", juce::dontSendNotification);
             detuneLabel.setText ("Detune", juce::dontSendNotification);
             phaseLabel.setText ("Phase", juce::dontSendNotification);
-    
+
             phaseSlider.setRange (0.0, 360.0, 1.0);
-            phaseSlider.setSkewFactor (1.0); 
+            phaseSlider.setSkewFactor (1.0);
             phaseSlider.setTextValueSuffix (juce::CharPointer_UTF8 ("°"));
-    
+
             phaseAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                 apvts, "PHASE_" + opNum, phaseSlider);
         }
-    
+
         if (getWidth() > 0 && getHeight() > 0)
         {
             resized();
@@ -181,6 +190,10 @@ private:
     juce::Label opHeaderLabel;
     juce::Label ratioLabel, detuneLabel, levelLabel, phaseLabel;
     juce::Label attackLabel, decayLabel, sustainLabel, releaseLabel;
+    juce::ComboBox modeSelector;
+    juce::ComboBox waveShapeSelector;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> modeAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> waveShapeAttach;
 
     juce::ToggleButton syncButton;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> syncAttach;

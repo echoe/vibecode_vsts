@@ -24,7 +24,8 @@ FMPluginAudioProcessor::~FMPluginAudioProcessor() {}
 juce::AudioProcessorValueTreeState::ParameterLayout FMPluginAudioProcessor::createParameterLayout()
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
-    juce::StringArray waveChoices { "Sine", "Triangle", "Saw", "Square", "Additive", "Filter"};
+    juce::StringArray modeChoices { "Wave", "Additive", "Filter" };
+    juce::StringArray waveShapeChoices { "Sine", "Triangle", "Saw", "Square" };
     juce::StringArray filterTypeChoices { "Lowpass", "Highpass", "Bandpass", "Comb" };
     
     // Generate parameters for each operator dynamically
@@ -33,7 +34,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout FMPluginAudioProcessor::crea
         // ALL KNOB SETTINGS ARE HERE
         juce::String opNum = juce::String (i + 1);
         // Wave
-        params.push_back (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "WAVE_" + opNum, 1 }, "Op " + opNum + " Waveform", waveChoices, 0));
+        params.push_back (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "MODE_" + opNum, 1 }, "Op " + opNum + " Mode", modeChoices, 0));
+        params.push_back (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "WAVE_SHAPE_" + opNum, 1 }, "Op " + opNum + " Wave Shape", waveShapeChoices, 0));
         params.push_back (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "FILTER_TYPE_" + opNum, 1 }, "Op " + opNum + " Filter Type", filterTypeChoices, 0));
         // Tempo Sync
         params.push_back (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "TEMPO_SYNC_" + opNum, 1 }, "Op " + opNum + " Tempo Sync", false));

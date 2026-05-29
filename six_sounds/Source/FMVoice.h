@@ -12,7 +12,9 @@ public:
     {
         for (int i = 0; i < ProjectConfig::numOperators; ++i)
         {
+            modeParams[i] = nullptr;
             waveParams[i] = nullptr;
+            filterTypeParams[i] = nullptr;
             ratioParams[i] = nullptr;
             detuneParams[i] = nullptr;
             phaseParams[i] = nullptr;
@@ -46,6 +48,7 @@ public:
         {
             juce::String opNum = juce::String (i + 1);
 
+            modeParams[i] = apvts.getRawParameterValue ("MODE_" + opNum); // 0=Wave, 1=Additive, 2=Filter
             waveParams[i] = apvts.getRawParameterValue ("WAVE_" + opNum);
             filterTypeParams[i] = apvts.getRawParameterValue ("FILTER_TYPE_" + opNum);
             ratioParams[i]   = apvts.getRawParameterValue ("RATIO_" + opNum);
@@ -89,10 +92,10 @@ public:
     
         for (int i = 0; i < ProjectConfig::numOperators; ++i)
         {
-            operators[i].prepare (safeRate); 
-            opFilters[i].prepare (safeRate); 
+            operators[i].prepare (safeRate);
+            opFilters[i].prepare (safeRate);
             opFilters[i].reset();
-        }   
+        }
     }
 
     void startNote (int midiNoteNumber, float velocity, juce::SynthesiserSound*, int) override
@@ -118,7 +121,7 @@ public:
                 
                 operators[i].noteOn (p);
             }
-            opFilters[i].reset(); 
+            opFilters[i].reset();
         }
     }
 
@@ -258,37 +261,74 @@ public:
                     // =================================================================
                     
                     float ratio = ratioParams[dest]->load (std::memory_order_relaxed);
-                    int waveType = static_cast<int> (waveParams[dest]->load (std::memory_order_relaxed));
+                    int opMode = static_cast<int> (modeParams[dest]->load (std::memory_order_relaxed));
+                    int opShape = static_cast<int> (waveParams[dest]->load (std::memory_order_relaxed));
+                    int currentFilterType = opFilters[dest].getCurrentType();
                     
-                    if (waveType == 5) // If this operator is acting as a filter node
+                    float currentQ = 0.707f;
+                    if (qParams[dest] != nullptr) { currentQ = qParams[dest]->load (std::memory_order_relaxed); }
+                    currentQ += (qModOffsets[dest] * 5.0f);
+                    currentQ = juce::jlimit (0.05f, 25.0f, currentQ);
+                    
+                    if (opMode == 2) // DESTINATION NODE IS A FILTER
                     {
-                        float ratioKnob = ratioParams[dest]->load (std::memory_order_relaxed);
-                        float normalizedKnob = (ratioKnob - 0.25f) / (16.0f - 0.25f);
-                        float baseCutoff = 20.0f * std::pow (1000.0f, normalizedKnob);
-                        
-                        modulationSum = std::tanh (modulationSum * 0.2f) * 5.0f;
-                        
-                        float currentQ = 0.707f;
-                        if (qParams[dest] != nullptr) { currentQ = qParams[dest]->load (std::memory_order_relaxed); }
-                                
-                        // Apply Resonance Modulation (Safely clamp results to prevent biquad explosions)
-                        currentQ += (qModOffsets[dest] * 5.0f);
-                        currentQ = juce::jlimit (0.05f, 25.0f, currentQ);
-                                
-                        opFilters[dest].setResonance (currentQ);
-                        float currentK = opFilters[dest].getPrecalculatedK();
-                                
-                        float scaledDepthHz = 5000.0f;
-                        
-                        // Apply Cutoff Modulation (Adds directly to the physical mapping path)
-                        float dynamicCutoff = baseCutoff + (modulationSum * scaledDepthHz) + (cutoffModOffsets[dest] * 4000.0f);
+                        if (currentFilterType == 3) // --- COMB FILTER MODE ---
+                        {
+                            // 1. Repurpose the ADSR Knobs (Expected range: 0.0f to 1.0f)
+                            float feedbackKnob = attackParams[dest]->load (std::memory_order_relaxed);
+                            float dampingKnob  = decayParams[dest]->load (std::memory_order_relaxed);
+                            float freqKnob     = sustainParams[dest]->load (std::memory_order_relaxed);
+                            float keytrackToggle = releaseParams[dest]->load (std::memory_order_relaxed);
+
+                            // Map the raw 0-1 knobs to physical comb parameters
+                            float feedbackAmt = feedbackKnob * 0.99f;
+                            float dampingAmt  = dampingKnob * 0.95f;
+
+                            float combFreq = 1000.0f;
+
+                            // 2. Evaluate Keytracking
+                            if (keytrackToggle > 0.5f)
+                            {
+                                float ratioMult = ratioParams[dest]->load (std::memory_order_relaxed);
+                                // Sweep the "Sustain" (Freq) knob from -2 to +2 octaves relative to played pitch
+                                float octaveShift = (freqKnob * 4.0f) - 2.0f;
+                                combFreq = baseFrequency * ratioMult * std::pow (2.0f, octaveShift);
+                            }
+                            else
+                            {
+                                // Static frequency mapping (20Hz to ~10kHz)
+                                combFreq = 20.0f * std::pow (500.0f, freqKnob);
+                            }
+
+                            // 3. Apply active matrix modulations (Pitch/FM grid -> Comb Frequency)
+                            combFreq += (modulationSum * 200.0f) + (cutoffModOffsets[dest] * 4000.0f);
+                            float maxFreq = static_cast<float>(safeSampleRate) * 0.49f;
+                            combFreq = juce::jlimit (20.0f, maxFreq, combFreq);
+
+                            // 4. Process
+                            opOutputs[dest] = opFilters[dest].processSampleComb (audioInputSum, combFreq, feedbackAmt, dampingAmt);
+                        }
+                        else // --- STANDARD SVF MODES (Lowpass, Highpass, Bandpass) ---
+                        {
+                            float ratioKnob = ratioParams[dest]->load (std::memory_order_relaxed);
+                            float normalizedKnob = (ratioKnob - 0.25f) / (16.0f - 0.25f);
+                            float baseCutoff = 20.0f * std::pow (1000.0f, normalizedKnob);
                             
-                        float maxCutoff = static_cast<float>(safeSampleRate) * 0.49f;
-                        dynamicCutoff = juce::jlimit (20.0f, maxCutoff, dynamicCutoff);
+                            modulationSum = std::tanh (modulationSum * 0.2f) * 5.0f;
                             
-                        opOutputs[dest] = opFilters[dest].processSampleAudioRate (audioInputSum, dynamicCutoff, currentK);
+                            opFilters[dest].setResonance (currentQ);
+                            float currentK = opFilters[dest].getPrecalculatedK();
+                            
+                            float scaledDepthHz = 5000.0f;
+                            float dynamicCutoff = baseCutoff + (modulationSum * scaledDepthHz) + (cutoffModOffsets[dest] * 4000.0f);
+                            
+                            float maxCutoff = static_cast<float>(safeSampleRate) * 0.49f;
+                            dynamicCutoff = juce::jlimit (20.0f, maxCutoff, dynamicCutoff);
+                            
+                            opOutputs[dest] = opFilters[dest].processSampleAudioRate (audioInputSum, dynamicCutoff, currentK);
+                        }
                     }
-                    else // DESTINATION NODE IS A STANDARD OSCILLATOR
+                    else // DESTINATION NODE IS A STANDARD OSCILLATOR (Wave or Additive)
                     {
                         float nodeTargetFrequency = baseFrequency;
                         if (syncParams[dest] != nullptr && syncParams[dest]->load(std::memory_order_relaxed) > 0.5f)
@@ -311,7 +351,17 @@ public:
                         float phaseOffset = phaseParams[dest]->load (std::memory_order_relaxed) + (phaseModOffsets[dest] * 360.0f);
                         float detune = detuneParams[dest]->load (std::memory_order_relaxed);
                                 
-                        opOutputs[dest] = operators[dest].processSample (modulatedFreq, ratio, detune, modulationSum, waveType);
+                        opOutputs[dest] = operators[dest].processSample (
+                            modulatedFreq,
+                            ratio,
+                            detune,
+                            modulationSum,
+                            audioInputSum,        // The mixed audio piped from other operators
+                            opMode,               // 0 = Wave, 1 = Additive, 2 = Filter
+                            opShape,              // 0=Sine, 1=Tri, 2=Saw, 3=Square
+                            currentFilterType,    // 0 = LP, 1 = HP, 2 = BP, 3 = Comb
+                            currentQ              // Resonance/Feedback amount
+                        );
                                 
                         // CRITICAL STABILITY: Soft-clip the sum here too so adding the node audio
                         // doesn't clip the operator output tracking step immediately below.
@@ -348,16 +398,12 @@ public:
                 outputBuffer.addSample (channel, startSample + sample, mixSample * finalGain);
             }
         }
-
-        bool anyOscillatorActive = false;
-        for (auto& op : operators) { if (op.isActive()) { anyOscillatorActive = true; break; } }
-        if (!anyOscillatorActive){ clearCurrentNote();}
     }
 
 private:
     double baseFrequency = 440.0;
     float level = 0.0f;
-    std::atomic<float> currentBPM { 120.0f }; 
+    std::atomic<float> currentBPM { 120.0f };
 
     std::array<FMOperator, ProjectConfig::numOperators> operators;
     std::atomic<float>* filterTypeParams[ProjectConfig::numOperators];
@@ -366,6 +412,7 @@ private:
     std::array<float, ProjectConfig::numOperators> previousOpOutputs { 0.0f };
     std::array<float, ProjectConfig::numOperators> processedOpOutputs { 0.0f }; // Array for level modulation caching
 
+    std::array<std::atomic<float>*, ProjectConfig::numOperators> modeParams;
     std::array<std::atomic<float>*, ProjectConfig::numOperators> waveParams;
     std::array<std::atomic<float>*, ProjectConfig::numOperators> ratioParams;
     std::array<std::atomic<float>*, ProjectConfig::numOperators> detuneParams;

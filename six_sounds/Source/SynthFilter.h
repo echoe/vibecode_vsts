@@ -63,8 +63,9 @@ public:
 
     void reset()
     {
-        s1 = 0.0f; 
+        s1 = 0.0f;
         s2 = 0.0f;
+        lastCombDamping = 0.0f; // <-- Add this
         if (!combBuffer.empty())
         {
             std::fill (combBuffer.begin(), combBuffer.end(), 0.0f);
@@ -171,6 +172,41 @@ public:
             default:       return lp;
         }
     }    
+    // --- NEW: Audio-Rate Comb Filter for Physical Modeling ---
+    float processSampleComb (float input, float freqHz, float feedback, float dampingNormalized)
+        {
+        if (combBuffer.empty()) return input;
+
+        // 1. Calculate delay in samples safely, bounded by buffer size
+        float delaySamples = static_cast<float>(sampleRate) / juce::jmax(10.0f, freqHz);
+        float maxDelay = static_cast<float>(combBuffer.size() - 2);
+        delaySamples = juce::jlimit (1.0f, maxDelay, delaySamples);
+
+        float readPtr = static_cast<float>(writePtr) - delaySamples;
+        while (readPtr < 0.0f) readPtr += static_cast<float>(combBuffer.size());
+
+        // 2. Perform linear interpolation for pitch-zipper-free sweeps
+        int idx1 = static_cast<int>(readPtr) % combBuffer.size();
+        int idx2 = (idx1 + 1) % combBuffer.size();
+        float frac = readPtr - std::floor(readPtr);
+        float delayedSample = combBuffer[idx1] * (1.0f - frac) + combBuffer[idx2] * frac;
+
+        // 3. Apply Damping (A simple 1-pole lowpass inside the feedback loop)
+        // dampingNormalized acts as a smoothing coefficient. Higher = darker tail.
+        lastCombDamping = (delayedSample * (1.0f - dampingNormalized)) + (lastCombDamping * dampingNormalized);
+
+        // 4. Mix the feedback and soft-clip it to prevent infinite volume explosions
+        float safeFeedback = juce::jlimit (0.0f, 0.995f, feedback);
+        float output = input + (lastCombDamping * safeFeedback);
+            
+        combBuffer[writePtr] = std::tanh(output);
+        writePtr = (writePtr + 1) % combBuffer.size();
+
+        return output;
+    }
+        
+    // Add a quick getter so the voice knows what mode the filter is in
+    int getCurrentType() const noexcept { return static_cast<int>(currentType); }
 
 private:
     void updateCoefficients()
@@ -195,5 +231,6 @@ private:
     double sampleRate { 44100.0 };
     float targetCutoff { 1000.0f };
     float targetResonance { 0.707f };
+    float lastCombDamping { 0.0f };
     FilterType currentType { Lowpass };
 };
