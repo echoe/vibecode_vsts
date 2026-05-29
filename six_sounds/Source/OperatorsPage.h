@@ -22,7 +22,7 @@ struct CompactOperatorGroup : public juce::Component
         setupSlider (ratioSlider, ratioLabel, "Ratio", true);
         setupSlider (detuneSlider, detuneLabel, "Detune", true);
         setupSlider (phaseSlider, phaseLabel, "Phase", true);
-        setupSlider (levelSlider, levelLabel, "Level", true);
+        setupSlider (foldSlider, foldLabel, "Fold", true);
     
         setupSlider (attackSlider, attackLabel, "Attack", false);
         setupSlider (decaySlider, decayLabel, "Decay", false);
@@ -45,13 +45,13 @@ struct CompactOperatorGroup : public juce::Component
         
         filterTypeSelector.addItemList ({ "Lowpass", "Highpass", "Bandpass", "Comb" }, 1);
         addAndMakeVisible (filterTypeSelector);
-    
+
         // APVTS Links
         syncAttach    = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (apvts, "TEMPO_SYNC_" + opNum, syncButton);
         ratioAttach   = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "RATIO_" + opNum, ratioSlider);
         detuneAttach  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "DETUNE_" + opNum, detuneSlider);
         phaseAttach   = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "PHASE_" + opNum, phaseSlider);
-        levelAttach   = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "OUT_" + opNum, levelSlider);
+        foldAttach    = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "FOLD_" + opNum, foldSlider);
     
         attackAttach  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "ATTACK_" + opNum, attackSlider);
         decayAttach   = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "DECAY_" + opNum, decaySlider);
@@ -61,7 +61,7 @@ struct CompactOperatorGroup : public juce::Component
         modeAttach      = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (apvts, "MODE_" + opNum, modeSelector);
         waveShapeAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (apvts, "WAVE_SHAPE_" + opNum, waveShapeSelector);
         filterTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (apvts, "FILTER_TYPE_" + opNum, filterTypeSelector);
-   
+
         // Safe UI state triggers using the stored class member reference
         modeSelector.onChange = [this]() { updateUIState(); };
         syncButton.onClick    = [this]() { updateUIState(); };
@@ -82,14 +82,11 @@ struct CompactOperatorGroup : public juce::Component
     {
         auto area = getLocalBounds().reduced (6);
         auto topStrip = area.removeFromTop (22);
-    
         // 1. Position the Header and Sync Button
         opHeaderLabel.setBounds (topStrip.removeFromLeft (85));
         syncButton.setBounds (topStrip.removeFromLeft (45).reduced (1));
-    
         // 2. FIX: Carve out 75 pixels for the Mode Selector dropdown!
         modeSelector.setBounds (topStrip.removeFromLeft (75).reduced (1));
-    
         // 3. The remaining space goes to the conditional dropdowns
         if (filterTypeSelector.isVisible())
         {
@@ -102,14 +99,13 @@ struct CompactOperatorGroup : public juce::Component
             waveShapeSelector.setBounds (topStrip.reduced (1));
         }
     
-        // --- Everything below here stays exactly the same ---
         auto knobZone = area.removeFromTop (area.getHeight() / 2 + 5);
         int knobWidth = knobZone.getWidth() / 4;
     
         auto rArea = knobZone.removeFromLeft (knobWidth); ratioLabel.setBounds (rArea.removeFromTop (15)); ratioSlider.setBounds (rArea);
         auto dArea = knobZone.removeFromLeft (knobWidth); detuneLabel.setBounds (dArea.removeFromTop (15)); detuneSlider.setBounds (dArea);
         auto pArea = knobZone.removeFromLeft (knobWidth); phaseLabel.setBounds (pArea.removeFromTop (15));  phaseSlider.setBounds (pArea);
-        auto lArea = knobZone; levelLabel.setBounds (lArea.removeFromTop (15)); levelSlider.setBounds (lArea);
+        auto lArea = knobZone; foldLabel.setBounds (lArea.removeFromTop (15)); foldSlider.setBounds (lArea);
     
         int sliderWidth = area.getWidth() / 4;
         auto aArea = area.removeFromLeft (sliderWidth);   attackLabel.setBounds (aArea.removeFromTop (20));   attackSlider.setBounds (aArea);
@@ -138,6 +134,7 @@ private:
             ratioLabel.setText (isSynced ? "Sync Rate" : "Cutoff", juce::dontSendNotification);
             detuneLabel.setText ("Resonance", juce::dontSendNotification);
             phaseLabel.setText ("Q", juce::dontSendNotification);
+	    foldLabel.setText("Feedback", juce::dontSendNotification);
 
             phaseSlider.setRange (0.1, 10.0, 0.01);
             phaseSlider.setSkewFactorFromMidPoint (1.5);
@@ -150,6 +147,7 @@ private:
             ratioLabel.setText (isSynced ? "Sync Rate" : "Ratio", juce::dontSendNotification);
             detuneLabel.setText ("Detune", juce::dontSendNotification);
             phaseLabel.setText ("Phase", juce::dontSendNotification);
+	    foldLabel.setText ("Fold", juce::dontSendNotification);
 
             phaseSlider.setRange (0.0, 360.0, 1.0);
             phaseSlider.setSkewFactor (1.0);
@@ -168,11 +166,11 @@ private:
     juce::AudioProcessorValueTreeState& apvts;
     juce::String opNum;
 
-    juce::Slider ratioSlider, detuneSlider, levelSlider, phaseSlider;
+    juce::Slider ratioSlider, detuneSlider, phaseSlider, foldSlider;
     juce::Slider attackSlider, decaySlider, sustainSlider, releaseSlider;
     
     juce::Label opHeaderLabel;
-    juce::Label ratioLabel, detuneLabel, levelLabel, phaseLabel;
+    juce::Label ratioLabel, detuneLabel, phaseLabel, foldLabel;
     juce::Label attackLabel, decayLabel, sustainLabel, releaseLabel;
     
     juce::ComboBox modeSelector;
@@ -183,8 +181,9 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> modeAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> waveShapeAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> filterTypeAttachment;
+
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> syncAttach;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> ratioAttach, detuneAttach, levelAttach, phaseAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> ratioAttach, detuneAttach, phaseAttach, foldAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attackAttach, decayAttach, sustainAttach, releaseAttach;
 };
 

@@ -17,6 +17,7 @@ struct OperatorParameterCache
     std::atomic<float>* ratio { nullptr };
     std::atomic<float>* detune { nullptr };
     std::atomic<float>* phase { nullptr };
+    std::atomic<float>* fold { nullptr };
     std::atomic<float>* out { nullptr };
     std::atomic<float>* attack { nullptr };
     std::atomic<float>* decay { nullptr };
@@ -61,7 +62,9 @@ private:
 
     // Parameter Caching
     std::array<OperatorParameterCache, ProjectConfig::numOperators> opParams;
-    std::array<std::atomic<float>*, 3> rowTargetParams { nullptr, nullptr, nullptr };
+
+    // idk the AI says this is necessary
+    std::array<std::atomic<float>*, 6> extraModParams { nullptr };
 
     // Matrix Background Storage
     std::array<std::array<std::atomic<float>*, ProjectConfig::numOperators>, ProjectConfig::numOperators> matrixParams {};

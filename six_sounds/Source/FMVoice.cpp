@@ -31,22 +31,33 @@ void FMVoice::initParameters (juce::AudioProcessorValueTreeState& apvts)
     {
         juce::String opNum = juce::String (i + 1);
 
-        opParams[i].mode       = apvts.getRawParameterValue ("MODE_" + opNum); 
-        opParams[i].wave       = apvts.getRawParameterValue ("WAVE_" + opNum);
-        opParams[i].filterType = apvts.getRawParameterValue ("FILTER_TYPE_" + opNum);
-        opParams[i].ratio      = apvts.getRawParameterValue ("RATIO_" + opNum);
-        opParams[i].detune     = apvts.getRawParameterValue ("DETUNE_" + opNum);
-        opParams[i].phase      = apvts.getRawParameterValue ("PHASE_" + opNum);
-        opParams[i].out        = apvts.getRawParameterValue ("OUT_" + opNum);
-        opParams[i].attack     = apvts.getRawParameterValue ("ATTACK_" + opNum);
-        opParams[i].decay      = apvts.getRawParameterValue ("DECAY_" + opNum);
-        opParams[i].sustain    = apvts.getRawParameterValue ("SUSTAIN_" + opNum);
-        opParams[i].release    = apvts.getRawParameterValue ("RELEASE_" + opNum);
-        opParams[i].q          = apvts.getRawParameterValue ("FILTER_Q_" + opNum);
-        opParams[i].sync       = apvts.getRawParameterValue ("TEMPO_SYNC_" + opNum);
-	modSrcParams[i] = apvts.getRawParameterValue ("MOD_SRC_" + opNum);
-        modTgtParams[i] = apvts.getRawParameterValue ("MOD_TGT_" + opNum);
-        modAmtParams[i] = apvts.getRawParameterValue ("MOD_AMT_" + opNum);
+        // Helper lambda for safe parameter linking
+        auto check = [&](juce::String id, std::atomic<float>*& ptr) {
+            ptr = apvts.getRawParameterValue(id);
+            if (ptr == nullptr) 
+                DBG("CRITICAL: Parameter " + id + " not found!");
+            else
+                DBG("Parameter " + id + " found!");
+        };
+
+        check("MODE_" + opNum, opParams[i].mode);
+        check("WAVE_SHAPE_" + opNum, opParams[i].wave);
+        check("FILTER_TYPE_" + opNum, opParams[i].filterType);
+        check("RATIO_" + opNum, opParams[i].ratio);
+        check("DETUNE_" + opNum, opParams[i].detune);
+        check("PHASE_" + opNum, opParams[i].phase);
+        check("FOLD_" + opNum, opParams[i].fold);
+        check("OUT_" + opNum, opParams[i].out);
+        check("ATTACK_" + opNum, opParams[i].attack);
+        check("DECAY_" + opNum, opParams[i].decay);
+        check("SUSTAIN_" + opNum, opParams[i].sustain);
+        check("RELEASE_" + opNum, opParams[i].release);
+        check("FILTER_Q_" + opNum, opParams[i].q);
+        check("TEMPO_SYNC_" + opNum, opParams[i].sync);
+        
+        check("MOD_SRC_" + opNum, modSrcParams[i]);
+        check("MOD_TGT_" + opNum, modTgtParams[i]);
+        check("MOD_AMT_" + opNum, modAmtParams[i]);
 
         for (int dest = 0; dest < ProjectConfig::numOperators; ++dest)
         {
@@ -83,9 +94,7 @@ void FMVoice::startNote (int midiNoteNumber, float velocity, juce::SynthesiserSo
     baseFrequency = juce::MidiMessage::getMidiNoteInHertz (midiNoteNumber);
     level = velocity;
     
-    lastOpOutputs.fill (0.0f);
-    previousOpOutputs.fill (0.0f);
-    processedOpOutputs.fill (0.0f);
+    resetVoiceState();
 
     for (int i = 0; i < ProjectConfig::numOperators; ++i)
     {
@@ -93,6 +102,7 @@ void FMVoice::startNote (int midiNoteNumber, float velocity, juce::SynthesiserSo
         {
             float initPhase = opParams[i].phase->load (std::memory_order_relaxed);
             operators[i].resetPhase (initPhase);
+            
             juce::ADSR::Parameters p;
             p.attack  = opParams[i].attack->load (std::memory_order_relaxed);
             p.decay   = opParams[i].decay->load (std::memory_order_relaxed);
@@ -101,14 +111,20 @@ void FMVoice::startNote (int midiNoteNumber, float velocity, juce::SynthesiserSo
             
             operators[i].noteOn (p);
         }
-        if (opFilters[i] != nullptr) opFilters[i]->reset();
     }
 }
 
 void FMVoice::stopNote (float, bool allowTailOff)
 {
-    if (allowTailOff) { for (auto& op : operators) op.noteOff(); }
-    else { clearCurrentNote(); }
+    if (allowTailOff) 
+    { 
+        for (auto& op : operators) op.noteOff(); 
+    }
+    else 
+    { 
+        clearCurrentNote(); 
+        resetVoiceState();
+    }
 }
 
 void FMVoice::pitchWheelMoved (int) {}
@@ -134,53 +150,73 @@ void FMVoice::resetVoiceState()
 
 void FMVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int startSample, int numSamples)
 {
-    if (!isVoiceActive() || opParams[0].ratio == nullptr) return;
+    if (!isVoiceActive()) return;
 
-    bool isAnyEnvelopeActive = false;
+    double safeSampleRate = getSampleRate() > 0.0 ? getSampleRate() : 44100.0;
+    float currentBpmValue = currentBPM.load(std::memory_order_relaxed);
+
+    // =====================================================================
+    // BULLETPROOF PARAMETER LOADER
+    // If a pointer is null, it returns a safe default instead of crashing
+    // =====================================================================
+    auto safeLoad = [](std::atomic<float>* ptr, float fallback = 0.0f) -> float {
+        return ptr != nullptr ? ptr->load(std::memory_order_relaxed) : fallback;
+    };
+
+    // =====================================================================
+    // 1. CACHE PARAMETERS (CPU Optimization)
+    // =====================================================================
+    std::array<float, ProjectConfig::numOperators> cachedRatios, cachedDetunes, cachedPhases, cachedFolds, cachedOuts, cachedQs;
+    std::array<int, ProjectConfig::numOperators> cachedModes, cachedShapes, cachedFilterTypes;
+    std::array<bool, ProjectConfig::numOperators> cachedSyncs;
+    std::array<float, ProjectConfig::numOperators> cachedAttacks, cachedDecays, cachedSustains, cachedReleases;
+
     for (int i = 0; i < ProjectConfig::numOperators; ++i)
     {
-        if (operators[i].isActive()) 
+        // Now safely loading everything!
+        cachedRatios[i]    = safeLoad(opParams[i].ratio, 1.0f); // Default ratio to 1
+        cachedDetunes[i]   = safeLoad(opParams[i].detune, 0.0f);
+        cachedPhases[i]    = safeLoad(opParams[i].phase, 0.0f);
+        cachedFolds[i]     = safeLoad(opParams[i].fold, 0.0f);
+        cachedOuts[i]      = safeLoad(opParams[i].out, 0.0f);
+        cachedQs[i]        = safeLoad(opParams[i].q, 0.707f);
+        
+        cachedModes[i]       = static_cast<int>(safeLoad(opParams[i].mode, 0.0f));
+        cachedShapes[i]      = static_cast<int>(safeLoad(opParams[i].wave, 0.0f));
+        cachedFilterTypes[i] = static_cast<int>(safeLoad(opParams[i].filterType, 0.0f));
+        
+        cachedSyncs[i]     = safeLoad(opParams[i].sync, 0.0f) > 0.5f;
+        
+        cachedAttacks[i]   = safeLoad(opParams[i].attack, 0.1f);
+        cachedDecays[i]    = safeLoad(opParams[i].decay, 0.1f);
+        cachedSustains[i]  = safeLoad(opParams[i].sustain, 1.0f);
+        cachedReleases[i]  = safeLoad(opParams[i].release, 0.1f);
+
+        if (opFilters[i] != nullptr) 
         {
-            isAnyEnvelopeActive = true;
-            break;
+            opFilters[i]->setType(cachedFilterTypes[i]);
+            float resonanceQ = 0.1f + (cachedDetunes[i] * 4.9f); 
+            opFilters[i]->setResonance(resonanceQ);
         }
     }
 
-    if (!isAnyEnvelopeActive)
-    {
-        lastOpOutputs.fill (0.0f);
-        previousOpOutputs.fill (0.0f);
-        processedOpOutputs.fill (0.0f);
-    }
-
-    double safeSampleRate = getSampleRate() > 0.0 ? getSampleRate() : 44100.0;
-    std::array<float, ProjectConfig::numOperators> precalculatedK;
-
-    for (int i = 0; i < ProjectConfig::numOperators; ++i)
-    {
-        float detune = opParams[i].detune->load (std::memory_order_relaxed);
-        float resonanceQ = 0.1f + (detune * 4.9f);
-        precalculatedK[i] = 1.0f / resonanceQ;
-        
-        int filterTypeChoice = static_cast<int>(opParams[i].filterType->load (std::memory_order_relaxed));
-        if (opFilters[i] != nullptr) opFilters[i]->setType (filterTypeChoice);
-    }
-
+    // =====================================================================
+    // 2. SAMPLE-RATE DSP LOOP
+    // =====================================================================
     for (int sample = 0; sample < numSamples; ++sample)
     {
         std::array<float, ProjectConfig::numOperators> opOutputs { 0.0f };
-        
         std::array<float, ProjectConfig::numOperators> pitchModOffsets { 0.0f };
         std::array<float, ProjectConfig::numOperators> phaseModOffsets { 0.0f };
+        std::array<float, ProjectConfig::numOperators> foldModOffsets { 0.0f };
         std::array<float, ProjectConfig::numOperators> levelModOffsets { 0.0f };
         std::array<float, ProjectConfig::numOperators> cutoffModOffsets { 0.0f };
         std::array<float, ProjectConfig::numOperators> qModOffsets { 0.0f };
 
-        // Matrix Modulations
+        // --- PHASE A: MODULATION MATRIX PROCESSING ---
         for (int row = 0; row < 3; ++row)
         {
-            if (rowTargetParams[row] == nullptr) continue;
-            int targetType = static_cast<int>(rowTargetParams[row]->load (std::memory_order_relaxed));
+            int targetType = static_cast<int>(safeLoad(modTgtParams[row])); // <-- SAFE
 
             for (int src = 0; src < ProjectConfig::numOperators; ++src)
             {
@@ -188,72 +224,73 @@ void FMVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
 
                 for (int dest = 0; dest < ProjectConfig::numOperators; ++dest)
                 {
-                    if (customModMatrixParams[row][src][dest] == nullptr) continue;
-                    
-                    float amt = customModMatrixParams[row][src][dest]->load (std::memory_order_relaxed);
+                    float amt = safeLoad(customModMatrixParams[row][src][dest]); // <-- SAFE
                     if (std::abs(amt) < 0.0001f) continue;
 
                     float modSignal = srcAudio * amt;
 
-                    if (targetType == 0)      pitchModOffsets[dest]  += modSignal;
-                    else if (targetType == 1) phaseModOffsets[dest]  += modSignal;
-                    else if (targetType == 2) levelModOffsets[dest]  += modSignal;
-                    else if (targetType == 3) cutoffModOffsets[dest] += modSignal;
-                    else if (targetType == 4) qModOffsets[dest]      += modSignal;
+                    switch (targetType)
+                    {
+                        case 0: pitchModOffsets[dest]  += modSignal; break;
+                        case 1: phaseModOffsets[dest]  += modSignal; break;
+                        case 2: levelModOffsets[dest]  += modSignal; break;
+                        case 3: cutoffModOffsets[dest] += modSignal; break;
+                        case 4: qModOffsets[dest]      += modSignal; break;
+                        case 5: foldModOffsets[dest]   += modSignal; break;
+                    }
                 }
             }
         }
-    
+
+	// --- PHASE B: OPERATOR PROCESSING ---
         for (int dest = 0; dest < ProjectConfig::numOperators; ++dest)
         {
             float modulationSum = 0.0f;
             float audioInputSum = 0.0f;
-    
+
+            // Gather incoming signals for this specific operator
             for (int src = 0; src < ProjectConfig::numOperators; ++src)
             {
-                float modIndex = matrixParams[src][dest]->load (std::memory_order_relaxed);
+                float modIndex = safeLoad(matrixParams[src][dest]); // <-- SAFE
                 if (modIndex > 0.0f)
                 {
                     float modSignal = (src == dest) ? (lastOpOutputs[src] + previousOpOutputs[src]) * 0.5f : lastOpOutputs[src];
                     modulationSum += modSignal * modIndex;
                 }
-    
-                float audioGain = audioMatrixParams[src][dest]->load (std::memory_order_relaxed);
+
+                float audioGain = safeLoad(audioMatrixParams[src][dest]); // <-- SAFE
                 if (audioGain > 0.0f)
                 {
                     audioInputSum += lastOpOutputs[src] * audioGain;
                 }
             }
             audioInputSum = std::tanh (audioInputSum);
-            
-            float ratio = opParams[dest].ratio->load (std::memory_order_relaxed);
-            int opMode = static_cast<int> (opParams[dest].mode->load (std::memory_order_relaxed));
-            int opShape = static_cast<int> (opParams[dest].wave->load (std::memory_order_relaxed));
-            
-            int currentFilterType = (opFilters[dest] != nullptr) ? opFilters[dest]->getCurrentType() : 0;
-            
-            float currentQ = 0.707f;
-            if (opParams[dest].q != nullptr) { currentQ = opParams[dest].q->load (std::memory_order_relaxed); }
-            currentQ = juce::jlimit (0.05f, 25.0f, currentQ + (qModOffsets[dest] * 5.0f));
-            
-            if (opMode == 2 && opFilters[dest] != nullptr) 
-            {
-                if (currentFilterType == 3) 
-                {
-                    float feedbackKnob = opParams[dest].attack->load (std::memory_order_relaxed);
-                    float dampingKnob  = opParams[dest].decay->load (std::memory_order_relaxed);
-                    float freqKnob     = opParams[dest].sustain->load (std::memory_order_relaxed);
-                    float keytrack     = opParams[dest].release->load (std::memory_order_relaxed);
+            // Fetch Cached Variables
+            float ratio = cachedRatios[dest];
+            int opMode = cachedModes[dest];
+            int opShape = cachedShapes[dest];
+            int currentFilterType = cachedFilterTypes[dest];
+            float currentQ = juce::jlimit (0.05f, 25.0f, cachedQs[dest] + (qModOffsets[dest] * 5.0f));
 
-                    float feedbackAmt = feedbackKnob * 0.99f;
-                    float dampingAmt  = dampingKnob * 0.95f;
-                    float combFreq = 1000.0f;
+            // =========================================================
+            // CORE DSP DISPATCH
+            // =========================================================
+
+            // MODE 2: FILTER
+            if (opMode == 2 && opFilters[dest] != nullptr)
+            {
+                if (currentFilterType == 3) // Comb Filter
+                {
+                    float feedbackAmt = cachedAttacks[dest] * 0.99f;
+                    float dampingAmt  = cachedDecays[dest] * 0.95f;
+                    float freqKnob    = cachedSustains[dest];
+                    float keytrack    = cachedReleases[dest];
+                    float combFreq    = 1000.0f;
 
                     if (keytrack > 0.5f)
                     {
-                        float ratioMult = opParams[dest].ratio->load (std::memory_order_relaxed);
                         float octaveShift = (freqKnob * 4.0f) - 2.0f;
-                        combFreq = baseFrequency * ratioMult * std::pow (2.0f, octaveShift);
+                        combFreq = baseFrequency * ratio * std::pow (2.0f, octaveShift);
                     }
                     else
                     {
@@ -265,71 +302,117 @@ void FMVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
 
                     opOutputs[dest] = opFilters[dest]->processSampleComb (audioInputSum, combFreq, feedbackAmt, dampingAmt);
                 }
-                else 
+                else // SVF Filter
                 {
-                    float ratioKnob = opParams[dest].ratio->load (std::memory_order_relaxed);
-                    float normalizedKnob = (ratioKnob - 0.25f) / (16.0f - 0.25f);
+                    float normalizedKnob = (ratio - 0.25f) / (16.0f - 0.25f);
                     float baseCutoff = 20.0f * std::pow (1000.0f, normalizedKnob);
-                    
+
                     modulationSum = std::tanh (modulationSum * 0.2f) * 5.0f;
-                    
+
                     opFilters[dest]->setResonance (currentQ);
                     float currentK = opFilters[dest]->getPrecalculatedK();
                     float dynamicCutoff = baseCutoff + (modulationSum * 5000.0f) + (cutoffModOffsets[dest] * 4000.0f);
                     dynamicCutoff = juce::jlimit (20.0f, static_cast<float>(safeSampleRate) * 0.49f, dynamicCutoff);
-                    
+
                     opOutputs[dest] = opFilters[dest]->processSampleAudioRate (audioInputSum, dynamicCutoff, currentK);
                 }
             }
-            else 
+            // MODES 0 & 1: WAVE / ADDITIVE
+            else
             {
                 float nodeTargetFrequency = baseFrequency;
-                if (opParams[dest].sync != nullptr && opParams[dest].sync->load(std::memory_order_relaxed) > 0.5f)
+                if (cachedSyncs[dest])
                 {
-                    float bpm = currentBPM.load (std::memory_order_relaxed);
-                    nodeTargetFrequency = bpm / 60.0f;
+                    nodeTargetFrequency = currentBpmValue / 60.0f;
                 }
-                
+
                 float semitoneOffset = pitchModOffsets[dest] * 12.0f;
                 float modulatedFreq = nodeTargetFrequency * std::pow (2.0f, semitoneOffset / 12.0f);
                 modulatedFreq = juce::jlimit(0.1f, static_cast<float>(safeSampleRate) * 0.49f, modulatedFreq);
-                
+
                 modulationSum = std::tanh (modulationSum * 0.15f) * (juce::MathConstants<float>::pi * 2.0f);
-                    
-                float phaseOffset = opParams[dest].phase->load (std::memory_order_relaxed) + (phaseModOffsets[dest] * 360.0f);
-                float detune = opParams[dest].detune->load (std::memory_order_relaxed);
-                        
-                opOutputs[dest] = operators[dest].processSample (
+
+                float phaseOffset = cachedPhases[dest] + (phaseModOffsets[dest] * 360.0f);
+                float detune = cachedDetunes[dest];
+
+                // Generate Raw Oscillator Sample
+                // IMPORTANT: Ensure operators[dest].processSample() internally calls adsr.getNextSample()!
+                float rawSample = operators[dest].processSample (
                     modulatedFreq, ratio, detune, modulationSum,
                     audioInputSum, opMode, opShape, currentFilterType, currentQ
                 );
-                        
-                opOutputs[dest] = std::tanh (opOutputs[dest] + audioInputSum);
+		if (opMode == 0) // WAVE
+                {
+                    float finalFoldDepth = juce::jlimit (0.0f, 1.0f, cachedFolds[dest] + foldModOffsets[dest]);
+                
+                    // Only apply the Sine-folder if the user is actually turning the Fold knob
+                    if (finalFoldDepth > 0.001f)
+                    {
+                        float drive = 1.0f + (finalFoldDepth * 5.0f);
+                        float foldedSample = std::sin (rawSample * drive) * (1.0f / std::sqrt (drive));
+                        opOutputs[dest] = std::tanh (foldedSample + audioInputSum);
+                    }
+                    else
+                    {
+                        // Pass the pure Saw/Triangle/Square shape through!
+                        opOutputs[dest] = std::tanh (rawSample + audioInputSum);
+                    }
+                }
+                else if (opMode == 1) // ADDITIVE
+                {
+                    opOutputs[dest] = std::tanh (rawSample + audioInputSum);
+                }
             }
-                    
+
+            // --- PHASE C: FINAL LEVEL & HISTORY TRACKING ---
             processedOpOutputs[dest] = opOutputs[dest];
-                    
+
             if (std::abs(levelModOffsets[dest]) > 0.001f)
             {
                 processedOpOutputs[dest] *= juce::jlimit(0.0f, 2.0f, 1.0f + levelModOffsets[dest]);
             }
         }
-        
-        previousOpOutputs = lastOpOutputs;
-        lastOpOutputs = processedOpOutputs; 
 
+        // Update history for the next frame
+        previousOpOutputs = lastOpOutputs;
+        lastOpOutputs = processedOpOutputs;
+
+        // =====================================================================
+        // 3. MAIN OUTPUT MIX BUS
+        // =====================================================================
         float mixSample = 0.0f;
         for (int i = 0; i < ProjectConfig::numOperators; ++i)
         {
-            float outLevel = opParams[i].out->load (std::memory_order_relaxed);
-            mixSample += processedOpOutputs[i] * outLevel; 
+            mixSample += processedOpOutputs[i] * cachedOuts[i];
         }
 
         float polyphonyCushion = 1.0f / std::sqrt (static_cast<float> (ProjectConfig::numOperators));
+        float finalGain = level * polyphonyCushion * 0.5f;
+        
         for (int channel = 0; channel < outputBuffer.getNumChannels(); ++channel)
         {
-            float finalGain = level * polyphonyCushion * 0.5f;
             outputBuffer.addSample (channel, startSample + sample, mixSample * finalGain);
         }
+    }
+
+    // =====================================================================
+    // 4. CLEANUP: CHECK IF VOICE FINISHED
+    // =====================================================================
+    // Only check envelope activity AFTER the block is completely processed
+    bool isAnyEnvelopeActive = false;
+    for (int i = 0; i < ProjectConfig::numOperators; ++i)
+    {
+        if (operators[i].isActive())
+        {
+            isAnyEnvelopeActive = true;
+            break;
+        }
+    }
+
+    // If all ADSRs are completely finished, free the voice
+    if (!isAnyEnvelopeActive)
+    {
+        clearCurrentNote();
+        resetVoiceState();
     }
 }

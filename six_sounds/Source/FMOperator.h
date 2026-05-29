@@ -9,9 +9,15 @@ struct FMOperator
         currentSampleRate = sampleRate;
         envelope.setSampleRate (sampleRate);
         phase = 0.0;        
+        
         // Prepare filters
         filter.prepare ({ sampleRate, 1, 1 });
         filter.reset();
+    
+        // PREPARE COMB BUFFER (Allocate 1 second of audio memory)
+        combBuffer.resize (static_cast<size_t> (sampleRate));
+        std::fill (combBuffer.begin(), combBuffer.end(), 0.0f);
+        combWriteIdx = 0;
     }
     void noteOn (const juce::ADSR::Parameters& envParams)
     {

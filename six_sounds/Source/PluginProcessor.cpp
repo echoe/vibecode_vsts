@@ -25,7 +25,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout FMPluginAudioProcessor::crea
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
     juce::StringArray modeChoices { "Wave", "Additive", "Filter" };
-    juce::StringArray waveShapeChoices { "Sine", "Triangle", "Saw", "Square" };
+    juce::StringArray waveShapeChoices { "Sine", "Triangle", "Saw", "Square", "White Noise" };
     juce::StringArray filterTypeChoices { "Lowpass", "Highpass", "Bandpass", "Comb" };
     
     // Generate parameters for each operator dynamically
@@ -39,10 +39,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout FMPluginAudioProcessor::crea
         params.push_back (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "FILTER_TYPE_" + opNum, 1 }, "Op " + opNum + " Filter Type", filterTypeChoices, 0));
         // Tempo Sync
         params.push_back (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "TEMPO_SYNC_" + opNum, 1 }, "Op " + opNum + " Tempo Sync", false));
-        // Tuning Ratios, Phase, & Detune
+        // Osc Settings - Ratios, Detune, Phase, Fold
         params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID {"RATIO_" + opNum, 1}, "Op " + opNum + " Ratio", 0.01f, 16.0f, 1.0f));
         params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID {"DETUNE_" + opNum, 1}, "Op " + opNum + " Detune", -50.0f, 50.0f, 0.0f));
         params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "PHASE_" + opNum, 1 }, "Op " + opNum + " Phase", 0.0f, 360.0f, 0.0f));
+	params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "FOLD_" + opNum, 1 }, "Op " + opNum + " Phase", 0.0f, 1.0f, 0.0f));
         // Filter (only Q)
         auto qRange = juce::NormalisableRange<float> (0.1f, 10.0f, 0.01f, 0.5f);
         params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "FILTER_Q_" + opNum, 1 }, "Op " + opNum + " Filter Q", qRange, 0.707f));
@@ -53,6 +54,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout FMPluginAudioProcessor::crea
         params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID {"RELEASE_" + opNum, 1}, "Op " + opNum + " Release", 0.01f, 5.0f, 0.5f));
         // Output Levels
         params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID {"OUT_" + opNum, 1}, "Op " + opNum + " Out Level", 0.0f, 1.0f, (i == 0) ? 1.0f : 0.0f));
+
+	//
     }
     
     // Generate Modulation Matrix Nodes (NxN Grid)
@@ -78,15 +81,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout FMPluginAudioProcessor::crea
     }
 
     // --- NEW: FOCUSED MODULATION MATRIX PARAMETERS ---
+    juce::StringArray sourceChoices { "Op1", "Op2", "Op3", "Op4", "Op5", "Op6" };
     juce::StringArray targetChoices { "Pitch", "Phase", "Level", "Cutoff", "Resonance" };
-    
-    // Add target trackers for the 3 individual selection rows
-    params.push_back (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "ROW_TARGET_1", 1 }, "Row 1 Target", targetChoices, 0));
-    params.push_back (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "ROW_TARGET_2", 1 }, "Row 2 Target", targetChoices, 1));
-    params.push_back (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "ROW_TARGET_3", 1 }, "Row 3 Target", targetChoices, 2));
+    for (int src = 1; src < ProjectConfig::numOperators + 1; ++src)
+    {
+        params.push_back (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID {"MOD_SRC_" + juce::String (src), 1}, "MOD Source " + juce::String (src + 1), sourceChoices, 0));
+	params.push_back (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID {"MOD_TGT_" + juce::String (src), 1}, "MOD Target " + juce::String (src + 1), targetChoices, 0));
+	params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID {"MOD_AMT_" + juce::String (src), 1}, "MOD Amount " + juce::String (src + 1), 0.0f, 1.0f, 0.0f));
+    }
 
-    // Generate background multi-dimensional parameter nodes for row controls
-    for (int row = 1; row <= 3; ++row)
+    // Generate background multi-dimensional parameter nodes for row controls and mod matrix parameters
+    for (int row = 1; row <= 6; ++row)
     {
         for (int src = 0; src < ProjectConfig::numOperators; ++src)
         {
