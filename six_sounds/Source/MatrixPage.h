@@ -3,88 +3,59 @@
 #include <JuceHeader.h>
 #include "Constants.h"
 
-// --- VERTICAL ASSIGNMENT LANE ---
-struct FocusedModMatrixRow : public juce::Component
+// --- 6-SLOT MODULATION MATRIX ROW ---
+struct ModMatrixSlot : public juce::Component
 {
-    FocusedModMatrixRow (juce::AudioProcessorValueTreeState& vts, int rowIndex)
-        : apvts (vts), rowNum (rowIndex)
+    ModMatrixSlot (juce::AudioProcessorValueTreeState& apvts, int slotIndex)
     {
-        oscSelector.addItemList ({ "Src: 1", "Src: 2", "Src: 3", "Src: 4", "Src: 5", "Src: 6" }, 1);
-        oscSelector.setSelectedId (1, juce::dontSendNotification);
-        addAndMakeVisible (oscSelector);
+        juce::String slotNum = juce::String (slotIndex + 1);
 
-        targetSelector.addItemList ({ "Pitch", "Phase", "Level", "Cutoff", "Res" }, 1);
+        // 1. Source Selector
+        sourceSelector.addItemList ({ "None", "LFO 1", "LFO 2", "Env 1", "Env 2", "Velocity", "Mod Wheel" }, 1);
+        sourceSelector.setSelectedId (1, juce::dontSendNotification);
+        addAndMakeVisible (sourceSelector);
+
+        // 2. Target Selector
+        targetSelector.addItemList ({ "None", "Op 1 Pitch", "Op 2 Pitch", "Op 1 Level", "Cutoff", "Resonance", "Master Pitch" }, 1);
         targetSelector.setSelectedId (1, juce::dontSendNotification);
         addAndMakeVisible (targetSelector);
 
-        targetSelector.onChange = [this]() { updateSliderAttachments(); };
-        oscSelector.onChange    = [this]() { updateSliderAttachments(); };
+        // 3. Amount Slider (Bi-polar -1.0 to 1.0)
+        amountSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+        amountSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 40, 15);
+        addAndMakeVisible (amountSlider);
 
-        targetAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
-            apvts, "ROW_TARGET_" + juce::String (rowNum + 1), targetSelector);
-
-        for (int i = 0; i < ProjectConfig::numOperators; ++i)
-        {
-            sliders[i].setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-            sliders[i].setTextBoxStyle (juce::Slider::TextBoxBelow, false, 40, 12);
-            addAndMakeVisible (sliders[i]);
-
-            labels[i].setText ("-> Op " + juce::String (i + 1), juce::dontSendNotification);
-            labels[i].setJustificationType (juce::Justification::centred);
-            labels[i].setFont (juce::FontOptions (10.0f));
-            addAndMakeVisible (labels[i]);
-        }
-
-        updateSliderAttachments();
+        // 4. Parameter Attachments
+        srcAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
+            apvts, "MOD_SRC_" + slotNum, sourceSelector);
+            
+        tgtAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
+            apvts, "MOD_TGT_" + slotNum, targetSelector);
+            
+        amtAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+            apvts, "MOD_AMT_" + slotNum, amountSlider);
     }
 
     void resized() override
     {
-        auto area = getLocalBounds();
+        auto area = getLocalBounds().reduced (4);
         
-        // Stack selectors vertically at the top of the column lane
-        auto controlsArea = area.removeFromTop (48);
-        oscSelector.setBounds (controlsArea.removeFromTop (22).reduced (2, 1));
-        targetSelector.setBounds (controlsArea.reduced (2, 1));
-
-        // Carve remaining vertical space into 6 slots going top-to-bottom
-        int knobHeight = area.getHeight() / ProjectConfig::numOperators;
-        for (int i = 0; i < ProjectConfig::numOperators; ++i)
-        {
-            auto cell = area.removeFromTop (knobHeight);
-            labels[i].setBounds (cell.removeFromTop (12));
-            sliders[i].setBounds (cell.reduced (1));
-        }
-    }
-
-    void updateSliderAttachments()
-    {
-        int srcIndex = oscSelector.getSelectedId() - 1;
-        if (srcIndex < 0) srcIndex = 0;
-
-        for (int dest = 0; dest < ProjectConfig::numOperators; ++dest)
-        {
-            sliderAttach[dest].reset();
-
-            juce::String paramID = "FOCUSED_MOD_R" + juce::String (rowNum + 1) + "_" + 
-                                   juce::String (srcIndex) + "_" + juce::String (dest);
-
-            sliderAttach[dest] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-                apvts, paramID, sliders[dest]);
-        }
+        // Split the row into 3 horizontal pieces: Source -> Target -> Amount
+        int third = area.getWidth() / 3;
+        
+        sourceSelector.setBounds (area.removeFromLeft (third).reduced (2));
+        targetSelector.setBounds (area.removeFromLeft (third).reduced (2));
+        amountSlider.setBounds (area.reduced (2));
     }
 
 private:
-    juce::AudioProcessorValueTreeState& apvts;
-    int rowNum;
-
-    juce::ComboBox oscSelector;
+    juce::ComboBox sourceSelector;
     juce::ComboBox targetSelector;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> targetAttach;
+    juce::Slider amountSlider;
 
-    std::array<juce::Slider, ProjectConfig::numOperators> sliders;
-    std::array<juce::Label, ProjectConfig::numOperators> labels;
-    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, ProjectConfig::numOperators> sliderAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> srcAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tgtAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> amtAttach;
 };
 
 // --- MAIN REUSABLE MATRIX PAGE COMPONENT ---
@@ -97,6 +68,7 @@ public:
         : paramPrefix (prefix), 
           matrixTitle (title)
     {
+        // 1. Setup Main NxN Grid Sliders
         for (int src = 0; src < ProjectConfig::numOperators; ++src)
         {
             for (int dest = 0; dest < ProjectConfig::numOperators; ++dest)
@@ -111,12 +83,34 @@ public:
             }
         }
 
+        // 2. Setup the Right Sidebar Controls based on the current Page
         if (paramPrefix == "MOD_")
         {
-            for (int row = 0; row < 3; ++row)
+            // If Mod Page: Generate 6 slots for the routing matrix
+            for (int i = 0; i < 6; ++i)
             {
-                matrixRows.push_back (std::make_unique<FocusedModMatrixRow> (apvts, row));
-                addAndMakeVisible (*matrixRows.back());
+                modSlots.push_back (std::make_unique<ModMatrixSlot> (apvts, i));
+                addAndMakeVisible (*modSlots.back());
+            }
+        }
+        else 
+        {
+            // If Audio/FM Routing Page: Generate Master Output Levels for the Carriers
+            for (int i = 0; i < ProjectConfig::numOperators; ++i)
+            {
+                auto* outSlider = outputSliders.add (new juce::Slider());
+                outSlider->setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+                outSlider->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 40, 12);
+                addAndMakeVisible (outSlider);
+
+                auto* outLabel = outputLabels.add (new juce::Label());
+                outLabel->setText ("Out " + juce::String (i + 1), juce::dontSendNotification);
+                outLabel->setJustificationType (juce::Justification::centred);
+                addAndMakeVisible (outLabel);
+
+                // These use the "OUT_1", "OUT_2" APVTS parameters you used to have on the operator page
+                outputAttachments.add (std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+                    apvts, "OUT_" + juce::String (i + 1), *outSlider));
             }
         }
     }
@@ -132,6 +126,7 @@ public:
         g.setColour (juce::Colours::lightgrey);
         g.setFont (12.0f);
 
+        // Draw Matrix Grid Labels
         for (int src = 0; src < ProjectConfig::numOperators; ++src)
         {
             int yPos = ProjectConfig::matrixYPos - 10 + (src * ProjectConfig::matrixSpacing) + (ProjectConfig::matrixSpacing / 2);
@@ -148,35 +143,29 @@ public:
                         juce::Justification::centred);
         }
 
-        if (paramPrefix == "MOD_" && !matrixRows.empty())
-        {
-            g.setColour (juce::Colours::white.withAlpha (0.15f));
-            float splitX = static_cast<float> (matrixRows[0]->getX() - 12);
-            g.drawVerticalLine (static_cast<int>(splitX), 45.0f, static_cast<float>(getHeight() - 10));
-        }
+        // Sidebar Splitter Line
+        g.setColour (juce::Colours::white.withAlpha (0.15f));
+        float splitX = static_cast<float> (getLocalBounds().getWidth() * 0.65f);
+        g.drawVerticalLine (static_cast<int>(splitX), 45.0f, static_cast<float>(getHeight() - 10));
+        
+        // Sidebar Header Text
+        g.setColour (juce::Colours::white.withAlpha(0.6f));
+        g.setFont (14.0f);
+        g.drawText (paramPrefix == "MOD_" ? "MODULATION MATRIX" : "CARRIER OUTPUT LEVELS", 
+                    static_cast<int>(splitX) + 10, 30, getWidth() - static_cast<int>(splitX) - 20, 20, 
+                    juce::Justification::centred);
     }
 
     void resized() override
     {
         auto area = getLocalBounds();
+        area.removeFromTop (50); // Make room for titles
 
-        juce::Rectangle<int> mainGridArea;
-        juce::Rectangle<int> rightSidebar;
+        // Split into Main Grid (65%) and Sidebar (35%)
+        auto mainGridArea = area.removeFromLeft (static_cast<int> (area.getWidth() * 0.65));
+        auto rightSidebar = area.reduced(10, 0); // Add some padding
 
-        if (paramPrefix == "MOD_")
-        {
-            // Dedicate 65% space to NxN matrix, 35% to the vertical lanes block
-            mainGridArea = area.removeFromLeft (static_cast<int> (area.getWidth() * 0.65));
-            rightSidebar = area;
-        }
-        else
-        {
-            mainGridArea = area;
-        }
-
-        // only drop header for main grid area
-	area.removeFromTop (40);
-
+        // 1. Layout Main NxN Grid
         int index = 0;
         for (int src = 0; src < ProjectConfig::numOperators; ++src)
         {
@@ -185,21 +174,38 @@ public:
                 if (auto* slider = matrixSliders[index++])
                 {
                     slider->setBounds (mainGridArea.getX() + ProjectConfig::matrixXPos + (dest * ProjectConfig::matrixSpacing), 
-                                       ProjectConfig::matrixYPos + (src * ProjectConfig::matrixSpacing), 
+                                       ProjectConfig::matrixYPos + (src * ProjectConfig::matrixSpacing), // adjusted for top cut
                                        70, 90);
                 }
             }
         }
 
+        // 2. Layout Sidebar Contextually
         if (paramPrefix == "MOD_")
         {
-            rightSidebar.removeFromLeft (12); // Split divider line offset padding
-            
-            // Layout the 3 strips side-by-side inside the sidebar panel width
-            int laneWidth = rightSidebar.getWidth() / 3;
-            for (size_t i = 0; i < matrixRows.size(); ++i)
+            // Stack the 6 mod slots vertically
+            int slotHeight = rightSidebar.getHeight() / 6;
+            for (auto& slot : modSlots)
             {
-                matrixRows[i]->setBounds (rightSidebar.removeFromLeft (laneWidth).reduced (4, 0));
+                slot->setBounds (rightSidebar.removeFromTop (slotHeight).reduced(0, 2));
+            }
+        }
+	else
+        {
+            int rowHeight = rightSidebar.getHeight() / ProjectConfig::numOperators;
+        
+            for (int i = 0; i < ProjectConfig::numOperators; ++i)
+            {
+                // Carve out a row from the top
+                auto cell = rightSidebar.removeFromTop (rowHeight).reduced (0, 2);
+        
+                // Squeeze the label to the left side of the row
+                if (auto* label = outputLabels[i])
+                    label->setBounds (cell.removeFromLeft (50));
+        
+                // The fader stretches horizontally across the rest of the row space
+                if (auto* slider = outputSliders[i])
+                    slider->setBounds (cell);
             }
         }
     }
@@ -208,8 +214,15 @@ private:
     juce::String paramPrefix;
     juce::String matrixTitle;
 
+    // NxN Matrix Components
     juce::OwnedArray<juce::Slider> matrixSliders;
     juce::OwnedArray<juce::AudioProcessorValueTreeState::SliderAttachment> matrixAttachments;
 
-    std::vector<std::unique_ptr<FocusedModMatrixRow>> matrixRows;
+    // Mod Page Context Components
+    std::vector<std::unique_ptr<ModMatrixSlot>> modSlots;
+    
+    // Audio Routing Context Components
+    juce::OwnedArray<juce::Slider> outputSliders;
+    juce::OwnedArray<juce::Label> outputLabels;
+    juce::OwnedArray<juce::AudioProcessorValueTreeState::SliderAttachment> outputAttachments;
 };

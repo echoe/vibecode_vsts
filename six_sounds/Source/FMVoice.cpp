@@ -44,8 +44,9 @@ void FMVoice::initParameters (juce::AudioProcessorValueTreeState& apvts)
         opParams[i].release    = apvts.getRawParameterValue ("RELEASE_" + opNum);
         opParams[i].q          = apvts.getRawParameterValue ("FILTER_Q_" + opNum);
         opParams[i].sync       = apvts.getRawParameterValue ("TEMPO_SYNC_" + opNum);
-
-        if (i < 3) rowTargetParams[i] = apvts.getRawParameterValue ("ROW_TARGET_" + juce::String(i + 1));
+	modSrcParams[i] = apvts.getRawParameterValue ("MOD_SRC_" + opNum);
+        modTgtParams[i] = apvts.getRawParameterValue ("MOD_TGT_" + opNum);
+        modAmtParams[i] = apvts.getRawParameterValue ("MOD_AMT_" + opNum);
 
         for (int dest = 0; dest < ProjectConfig::numOperators; ++dest)
         {

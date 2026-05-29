@@ -67,4 +67,10 @@ private:
     std::array<std::array<std::atomic<float>*, ProjectConfig::numOperators>, ProjectConfig::numOperators> matrixParams {};
     std::array<std::array<std::atomic<float>*, ProjectConfig::numOperators>, ProjectConfig::numOperators> audioMatrixParams {};
     std::array<std::array<std::array<std::atomic<float>*, ProjectConfig::numOperators>, ProjectConfig::numOperators>, 3> customModMatrixParams {};
+
+    // Mod matrix
+    // Pointers to the 6 global modulation matrix slots
+    std::array<std::atomic<float>*, 6> modSrcParams { nullptr };
+    std::array<std::atomic<float>*, 6> modTgtParams { nullptr };
+    std::array<std::atomic<float>*, 6> modAmtParams { nullptr };
 };
