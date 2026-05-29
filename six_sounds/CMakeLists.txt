@@ -30,6 +30,7 @@ target_sources(SixSounds PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.h
     Source/PluginEditor.cpp
+    Source/FMVoice.cpp
 )
 
 # --- ADD THIS BLOCK TO BYPASS GTK/WEBKIT DEPENDENCIES ---

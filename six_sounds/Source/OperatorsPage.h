@@ -1,14 +1,13 @@
 // OperatorsPage.h
 #pragma once
 #include <JuceHeader.h>
-#include "Constants.h" // Make sure ProjectConfig is visible
+#include "Constants.h"
 
 struct CompactOperatorGroup : public juce::Component
 {
-    CompactOperatorGroup (juce::AudioProcessorValueTreeState& apvts, int opIndex)
+    CompactOperatorGroup (juce::AudioProcessorValueTreeState& valueTreeState, int opIndex)
+        : apvts (valueTreeState), opNum (juce::String (opIndex + 1))
     {
-        juce::String opNum = juce::String (opIndex + 1);
-    
         auto setupSlider = [this] (juce::Slider& slider, juce::Label& label, const juce::String& text, bool rotary)
         {
             slider.setSliderStyle (rotary ? juce::Slider::RotaryHorizontalVerticalDrag : juce::Slider::LinearVertical);
@@ -38,20 +37,17 @@ struct CompactOperatorGroup : public juce::Component
         syncButton.setClickingTogglesState (true);
         addAndMakeVisible (syncButton);
         
-        modeSelector.clear (juce::dontSendNotification);
         modeSelector.addItemList ({ "Wave", "Additive", "Filter" }, 1);
         addAndMakeVisible (modeSelector);
 
-        waveShapeSelector.clear (juce::dontSendNotification);
-        waveShapeSelector.addItemList ({ "Sine", "Triangle", "Saw", "Square" }, 1);
+        waveShapeSelector.addItemList ({ "Sine", "Triangle", "Saw", "Square", "White Noise" }, 1);
         addAndMakeVisible (waveShapeSelector);
         
-        filterTypeSelector.clear (juce::dontSendNotification);
         filterTypeSelector.addItemList ({ "Lowpass", "Highpass", "Bandpass", "Comb" }, 1);
         addAndMakeVisible (filterTypeSelector);
     
-        // Secure APVTS Links
-	syncAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (apvts, "TEMPO_SYNC_" + opNum, syncButton);
+        // APVTS Links
+        syncAttach    = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (apvts, "TEMPO_SYNC_" + opNum, syncButton);
         ratioAttach   = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "RATIO_" + opNum, ratioSlider);
         detuneAttach  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "DETUNE_" + opNum, detuneSlider);
         phaseAttach   = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "PHASE_" + opNum, phaseSlider);
@@ -61,37 +57,16 @@ struct CompactOperatorGroup : public juce::Component
         decayAttach   = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "DECAY_" + opNum, decaySlider);
         sustainAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "SUSTAIN_" + opNum, sustainSlider);
         releaseAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "RELEASE_" + opNum, releaseSlider);
-        modeAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (apvts, "MODE_" + opNum, modeSelector);
+        
+        modeAttach      = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (apvts, "MODE_" + opNum, modeSelector);
         waveShapeAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (apvts, "WAVE_SHAPE_" + opNum, waveShapeSelector);
         filterTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (apvts, "FILTER_TYPE_" + opNum, filterTypeSelector);
    
-        // Dynamic Visibility Rule Logic using safe value captures
-        modeSelector.onChange = [this, &apvts, opNum]()
-        {
-            updateKnobFunction(apvts, opNum);
-        };
-
-	// Dynamic logic when the Sync Button is toggled
-        syncButton.onClick = [this]()
-        {
-            bool isSynced = syncButton.getToggleState();
-            if (isSynced)
-            {
-                // Remap Ratio slider to act as time subdivisions / percentages
-                ratioLabel.setText ("Sync Rate", juce::dontSendNotification);
-                ratioSlider.setTextValueSuffix ("x");
-            }
-            else
-            {
-                // Restore standard FM Ratio label
-                bool isFilterMode = (waveSelector.getSelectedId() == 6);
-                ratioLabel.setText (isFilterMode ? "Cutoff" : "Ratio", juce::dontSendNotification);
-                ratioSlider.setTextValueSuffix ("");
-            }
-        };
+        // Safe UI state triggers using the stored class member reference
+        modeSelector.onChange = [this]() { updateUIState(); };
+        syncButton.onClick    = [this]() { updateUIState(); };
     
-        // Trigger initial state assignment safely
-        updateKnobFunction(apvts, opNum);
+        updateUIState();
     }
 
     void paint (juce::Graphics& g) override
@@ -107,28 +82,35 @@ struct CompactOperatorGroup : public juce::Component
     {
         auto area = getLocalBounds().reduced (6);
         auto topStrip = area.removeFromTop (22);
+    
+        // 1. Position the Header and Sync Button
         opHeaderLabel.setBounds (topStrip.removeFromLeft (85));
-	syncButton.setBounds (topStrip.removeFromLeft (45).reduced (1));
-        
+        syncButton.setBounds (topStrip.removeFromLeft (45).reduced (1));
+    
+        // 2. FIX: Carve out 75 pixels for the Mode Selector dropdown!
+        modeSelector.setBounds (topStrip.removeFromLeft (75).reduced (1));
+    
+        // 3. The remaining space goes to the conditional dropdowns
         if (filterTypeSelector.isVisible())
         {
             int menuWidth = topStrip.getWidth() / 2;
-            waveSelector.setBounds (topStrip.removeFromLeft (menuWidth).reduced (1));
+            waveShapeSelector.setBounds (topStrip.removeFromLeft (menuWidth).reduced (1));
             filterTypeSelector.setBounds (topStrip.reduced (1));
         }
         else
         {
-            waveSelector.setBounds (topStrip.reduced (1));
+            waveShapeSelector.setBounds (topStrip.reduced (1));
         }
-
+    
+        // --- Everything below here stays exactly the same ---
         auto knobZone = area.removeFromTop (area.getHeight() / 2 + 5);
         int knobWidth = knobZone.getWidth() / 4;
-
+    
         auto rArea = knobZone.removeFromLeft (knobWidth); ratioLabel.setBounds (rArea.removeFromTop (15)); ratioSlider.setBounds (rArea);
         auto dArea = knobZone.removeFromLeft (knobWidth); detuneLabel.setBounds (dArea.removeFromTop (15)); detuneSlider.setBounds (dArea);
         auto pArea = knobZone.removeFromLeft (knobWidth); phaseLabel.setBounds (pArea.removeFromTop (15));  phaseSlider.setBounds (pArea);
         auto lArea = knobZone; levelLabel.setBounds (lArea.removeFromTop (15)); levelSlider.setBounds (lArea);
-
+    
         int sliderWidth = area.getWidth() / 4;
         auto aArea = area.removeFromLeft (sliderWidth);   attackLabel.setBounds (aArea.removeFromTop (20));   attackSlider.setBounds (aArea);
         auto decArea = area.removeFromLeft (sliderWidth);  decayLabel.setBounds (decArea.removeFromTop (20)); decaySlider.setBounds (decArea);
@@ -137,22 +119,23 @@ struct CompactOperatorGroup : public juce::Component
     }
 
 private:
-    // Dedicated method handles the attachment mutation cleanly
-    void updateKnobFunction (juce::AudioProcessorValueTreeState& apvts, const juce::String& opNum)
+    // Combined logic method avoids layout text fighting
+    void updateUIState()
     {
         int selectedMode = modeSelector.getSelectedId();
         bool isWaveMode = (selectedMode == 1);
         bool isFilterMode = (selectedMode == 3);
+        bool isSynced = syncButton.getToggleState();
 
         waveShapeSelector.setVisible (isWaveMode);
         filterTypeSelector.setVisible (isFilterMode);
 
+        // Handle dynamic parameter re-linking safely via class reference
         phaseAttach.reset();
 
         if (isFilterMode)
         {
-            // UI assumes audio is piped from other internal oscillators via the modulation matrix
-            ratioLabel.setText ("Cutoff", juce::dontSendNotification);
+            ratioLabel.setText (isSynced ? "Sync Rate" : "Cutoff", juce::dontSendNotification);
             detuneLabel.setText ("Resonance", juce::dontSendNotification);
             phaseLabel.setText ("Q", juce::dontSendNotification);
 
@@ -160,12 +143,11 @@ private:
             phaseSlider.setSkewFactorFromMidPoint (1.5);
             phaseSlider.setTextValueSuffix ("");
 
-            phaseAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-                apvts, "FILTER_Q_" + opNum, phaseSlider);
+            phaseAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "FILTER_Q_" + opNum, phaseSlider);
         }
         else
         {
-            ratioLabel.setText ("Ratio", juce::dontSendNotification);
+            ratioLabel.setText (isSynced ? "Sync Rate" : "Ratio", juce::dontSendNotification);
             detuneLabel.setText ("Detune", juce::dontSendNotification);
             phaseLabel.setText ("Phase", juce::dontSendNotification);
 
@@ -173,34 +155,37 @@ private:
             phaseSlider.setSkewFactor (1.0);
             phaseSlider.setTextValueSuffix (juce::CharPointer_UTF8 ("°"));
 
-            phaseAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-                apvts, "PHASE_" + opNum, phaseSlider);
+            phaseAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "PHASE_" + opNum, phaseSlider);
         }
 
+        ratioSlider.setTextValueSuffix (isSynced ? "x" : "");
+
         if (getWidth() > 0 && getHeight() > 0)
-        {
             resized();
-        }
     }
+
+    // Keep state reference completely safe inside class lifecycle
+    juce::AudioProcessorValueTreeState& apvts;
+    juce::String opNum;
 
     juce::Slider ratioSlider, detuneSlider, levelSlider, phaseSlider;
     juce::Slider attackSlider, decaySlider, sustainSlider, releaseSlider;
-    juce::ComboBox waveSelector;
-    juce::ComboBox filterTypeSelector;
+    
     juce::Label opHeaderLabel;
     juce::Label ratioLabel, detuneLabel, levelLabel, phaseLabel;
     juce::Label attackLabel, decayLabel, sustainLabel, releaseLabel;
+    
     juce::ComboBox modeSelector;
     juce::ComboBox waveShapeSelector;
+    juce::ComboBox filterTypeSelector;
+    juce::ToggleButton syncButton;
+
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> modeAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> waveShapeAttach;
-
-    juce::ToggleButton syncButton;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> filterTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> syncAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> ratioAttach, detuneAttach, levelAttach, phaseAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attackAttach, decayAttach, sustainAttach, releaseAttach;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> waveAttach;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> filterTypeAttachment;
 };
 
 // --- THE PARENT VIEW MANAGER CLASS ---

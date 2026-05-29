@@ -8,53 +8,31 @@ struct FMOperator
     {
         currentSampleRate = sampleRate;
         envelope.setSampleRate (sampleRate);
-        phase = 0.0;
-        
-        // Prepare JUCE SVF
+        phase = 0.0;        
+        // Prepare filters
         filter.prepare ({ sampleRate, 1, 1 });
         filter.reset();
-        
-        // Pre-allocate the comb filter buffer (1 second max delay)
-        combBuffer.assign (static_cast<size_t> (sampleRate), 0.0f);
-        combWriteIdx = 0;
     }
-
     void noteOn (const juce::ADSR::Parameters& envParams)
     {
+	// envelope parameters
         envelope.setParameters (envParams);
         envelope.noteOn();
         phase = 0.0;
-        
+        // filter parameters
         filter.reset();
-        std::fill (combBuffer.begin(), combBuffer.end(), 0.0f);
-        combWriteIdx = 0;
     }
-
-    void noteOff()
-    {
-        envelope.noteOff();
-    }
-
-    void resetPhase (float phaseInDegrees)
-    {
-        phase = (phaseInDegrees / 360.0) * juce::MathConstants<double>::twoPi;
-    }
-
-    void resetVoiceState()
-    {
-        envelope.reset();
-        filter.reset();
-        std::fill (combBuffer.begin(), combBuffer.end(), 0.0f);
-    }
+    void noteOff(){ envelope.noteOff();}
+    void resetPhase (float phaseInDegrees){ phase = (phaseInDegrees / 360.0) * juce::MathConstants<double>::twoPi;}
+    // should combBuffer reset on filter.reset? why is it reset within the operator?
+    void resetVoiceState() {envelope.reset();filter.reset();}
 
     // Signature updated to accept separated mode/shape, internal audio routing, and filter params
     float processSample (double baseFrequency, float ratio, float detune, float phaseModulation,
                          float audioInput, int mode, int waveShape, int filterType, float filterQ)
     {
         if (!envelope.isActive()) return 0.0f;
-
         float outputSample = 0.0f;
-
         // --- MODE 2: FILTER ---
         if (mode == 2)
         {
@@ -147,8 +125,10 @@ struct FMOperator
                     case 3: // Square
                         outputSample = (wrappedPhase < juce::MathConstants<float>::pi) ? 1.0f : -1.0f;
                         break;
-                        
-                    default:
+		    case 4: // White Noise
+        		outputSample = random.nextFloat() * 2.0f - 1.0f;
+        		break;
+                    default: // Sine
                         outputSample = std::sin (wrappedPhase);
                         break;
                 }
@@ -164,6 +144,7 @@ struct FMOperator
     juce::ADSR envelope;
     double phase = 0.0;
     double currentSampleRate = 44100.0;
+    juce::Random random;
     
     juce::dsp::StateVariableTPTFilter<float> filter;
     std::vector<float> combBuffer;
