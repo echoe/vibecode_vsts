@@ -3,7 +3,6 @@
 #include <JuceHeader.h>
 #include "FMOperator.h"
 #include "SynthFilter.h"
-#include "CombFilter.h"
 #include "Constants.h"
 #include <array>
 #include <memory>
