@@ -1,7 +1,6 @@
-// FMOperator.h
 #pragma once
 #include <JuceHeader.h>
-#include "SynthFilter.h" // Include your custom class
+#include "SynthFilter.h"
 
 struct FMOperator
 {
@@ -11,12 +10,9 @@ struct FMOperator
         envelope.setSampleRate (sampleRate);
         phase = 0.0;        
         
-        // Prepare SVF Filter
-        filter.prepare ({ sampleRate, 1, 1 });
-        filter.reset();
-        
-        // PREPARE COMB FILTER CLASS
-        myCombFilter.prepare (sampleRate);
+        // Prepare your custom unified filter
+        internalFilter.prepare (sampleRate);
+        internalFilter.reset();
     }
     
     void noteOn (const juce::ADSR::Parameters& envParams)
@@ -25,9 +21,7 @@ struct FMOperator
         envelope.noteOn();
         phase = 0.0;
         
-        // Reset both filters to prevent ghost echoes
-        filter.reset();
-        myCombFilter.reset();
+        internalFilter.reset();
     }
     
     void noteOff() { envelope.noteOff(); }
@@ -40,70 +34,98 @@ struct FMOperator
     void resetVoiceState() 
     {
         envelope.reset();
-        filter.reset();
-        myCombFilter.reset(); // Clear Comb Filter on voice reset
+        internalFilter.reset(); 
     }
 
-    float processSample (double baseFrequency, float ratio, float detune, float phaseModulation,
-                         float audioInput, int mode, int waveShape, int filterType, float filterQ)
+    // Clean, comprehensive DSP processing!
+    float processSample (double baseFrequency, float currentBpm,
+                         float ratio, float detune, float phaseKnob, float foldKnob,
+                         float audioInputSum, float modulationSum,
+                         float pitchModOffset, float phaseModOffset, float cutoffModOffset, float foldModOffset,
+                         int mode, int waveShape, int filterType, bool isSynced)
     {
         if (!envelope.isActive()) return 0.0f;
         
         float outputSample = 0.0f;
         
-        // --- MODE 2: FILTER ---
+        // =========================================================
+        // MODE 2: FILTER
+        // =========================================================
         if (mode == 2)
         {
-            float cutoff = static_cast<float> (baseFrequency * ratio) + detune;
-            cutoff = juce::jlimit (20.0f, 20000.0f, cutoff);
-	    if (filterType == 3) // Comb Filter
-            {
-                // Opsix-style Bipolar mapping:
-                // Assuming your Q knob goes from 0.0 to 10.0:
-                // Q = 5.0 -> 0 feedback (dry)
-                // Q > 5.0 -> Positive feedback (up to +0.99)
-                // Q < 5.0 -> Negative feedback (down to -0.99)
-                float mappedFeedback = ((filterQ / 5.0f) - 1.0f) * 0.99f;
+            // --- 1. PREPARE PARAMETERS ---
+            float feedbackAmt = juce::jlimit(-0.95f, 0.95f, (foldKnob * 2.0f) - 1.0f);
+            float shiftedDampingKnob = detune + 50.0f;
+            float normalizedDamping = shiftedDampingKnob / 100.0f;
+            float dampingAmt  = juce::jlimit(0.001f, 0.95f, normalizedDamping);
+            float keytrackAmt = phaseKnob / 360.0f; 
+        
+            float normalizedKnob = (ratio - 0.25f) / (16.0f - 0.25f);
+            float baseFreq       = 20.0f * std::pow (1000.0f, normalizedKnob);
+            
+            // --- 2. APPLY KEYTRACKING ---
+            float tunedFreq = baseFreq + keytrackAmt * (baseFrequency - baseFreq);
 
-                // Route audio directly into the upgraded CombFilter
-		outputSample = myCombFilter.processSampleComb (audioInput, cutoff, mappedFeedback, 0.0f);
-		static int debugCounter = 0;
-                if (++debugCounter % 22050 == 0) // Prints twice a second
-                {
-                        DBG("Comb Executing! Input: " << audioInput << " | Cutoff: " << cutoff << " | Env: " << (int)envelope.isActive());
-                }
-            }
-            else // SVF (Lowpass, Highpass, Bandpass)
+            // --- 3. FILTER DSP ---
+            if (filterType == 3) // Comb Filter
             {
-                filter.setCutoffFrequency (cutoff);
-                filter.setResonance (juce::jlimit (0.1f, 10.0f, filterQ));
+                float modDepth = 1.0f - keytrackAmt;
+                float combFreq = tunedFreq + modDepth * (modulationSum * 200.0f + cutoffModOffset * 4000.0f);
+                combFreq = juce::jlimit(20.0f, static_cast<float>(currentSampleRate) * 0.49f, combFreq);
+
+                float output = internalFilter.processSampleComb(audioInputSum, combFreq, feedbackAmt, dampingAmt);
+                outputSample = std::isfinite(output) ? std::tanh(output) : 0.0f;
+            }
+            else // SVF Filter
+            {
+                float processedModSum = std::tanh (modulationSum * 0.2f) * 5.0f;
                 
-                switch (filterType)
-                {
-                    case 0: filter.setType (juce::dsp::StateVariableTPTFilterType::lowpass); break;
-                    case 1: filter.setType (juce::dsp::StateVariableTPTFilterType::highpass); break;
-                    case 2: filter.setType (juce::dsp::StateVariableTPTFilterType::bandpass); break;
-                    default: filter.setType (juce::dsp::StateVariableTPTFilterType::lowpass); break;
-                }
-                
-                outputSample = filter.processSample (1, audioInput);
+                // Coupled Resonance (Non-linear curve)
+                float coupledResonance = dampingAmt * dampingAmt;
+                internalFilter.setResonance (coupledResonance);
+        
+                float currentK = internalFilter.getPrecalculatedK();
+        
+                float dynamicCutoff = tunedFreq + (processedModSum * 5000.0f) + (cutoffModOffset * 4000.0f);
+                dynamicCutoff = juce::jlimit (20.0f, static_cast<float>(currentSampleRate) * 0.49f, dynamicCutoff);
+        
+                outputSample = internalFilter.processSampleAudioRate (audioInputSum, dynamicCutoff, currentK);
             }
         }
-        // --- MODE 0 & 1: STANDARD WAVE & ADDITIVE ---
+        // =========================================================
+        // MODES 0 & 1: WAVE / ADDITIVE
+        // =========================================================
         else
         {
-            double freq = (baseFrequency * ratio) + detune;
-            double phaseIncrement = (freq * juce::MathConstants<double>::twoPi) / currentSampleRate;
-            
+            // Sync & Pitch Processing
+            float nodeTargetFrequency = baseFrequency;
+            if (isSynced)
+            {
+                nodeTargetFrequency = currentBpm / 60.0f;
+            }
+
+            float semitoneOffset = pitchModOffset * 12.0f;
+            float modulatedFreq = nodeTargetFrequency * std::pow (2.0f, semitoneOffset / 12.0f);
+            modulatedFreq = juce::jlimit(0.1f, static_cast<float>(currentSampleRate) * 0.49f, modulatedFreq);
+
+            // Phase Increment
+            double phaseIncrement = (modulatedFreq * juce::MathConstants<double>::twoPi) / currentSampleRate;
             phase += phaseIncrement;
             if (phase >= juce::MathConstants<double>::twoPi)
                 phase -= juce::MathConstants<double>::twoPi;
-        
-            float lookupPhase = static_cast<float> (phase) + phaseModulation;
+
+            // Phase Modulation & Offset
+            float processedModSum = std::tanh (modulationSum * 0.15f) * (juce::MathConstants<float>::pi * 2.0f);
+            float phaseOffset = phaseKnob + (phaseModOffset * 360.0f);
+            float phaseOffsetRad = (phaseOffset / 360.0f) * juce::MathConstants<float>::twoPi;
+
+            float lookupPhase = static_cast<float> (phase) + processedModSum + phaseOffsetRad;
             float wrappedPhase = std::fmod (lookupPhase, juce::MathConstants<float>::twoPi);
             if (wrappedPhase < 0.0f)
                 wrappedPhase += juce::MathConstants<float>::twoPi;
-        
+                
+            float rawSample = 0.0f;
+
             if (mode == 1) // Additive (8-Partial)
             {
                 float additiveSum = 0.0f;
@@ -112,39 +134,38 @@ struct FMOperator
                 for (int k = 1; k <= 8; ++k)
                 {
                     float harmonicPhase = std::fmod (lookupPhase * k, juce::MathConstants<float>::twoPi);
-                    if (harmonicPhase < 0.0f)
-                        harmonicPhase += juce::MathConstants<float>::twoPi;
+                    if (harmonicPhase < 0.0f) harmonicPhase += juce::MathConstants<float>::twoPi;
 
                     float amplitude = 1.0f / static_cast<float> (k);
-                    
                     additiveSum += amplitude * std::sin (harmonicPhase);
                     gainCompensation += amplitude;
                 }
-
-                outputSample = additiveSum / gainCompensation;
+                rawSample = additiveSum / gainCompensation;
+                outputSample = std::tanh (rawSample + audioInputSum);
             }
             else // Wave Shapes (Mode 0)
             {
                 switch (waveShape)
                 {
-                    case 0: // Sine
-                        outputSample = std::sin (wrappedPhase);
-                        break;
-                    case 1: // Triangle
-                        outputSample = 1.0f - 2.0f * std::abs (1.0f - (wrappedPhase / juce::MathConstants<float>::pi));
-                        break;
-                    case 2: // Saw
-                        outputSample = -1.0f + 2.0f * (wrappedPhase / juce::MathConstants<float>::twoPi);
-                        break;
-                    case 3: // Square
-                        outputSample = (wrappedPhase < juce::MathConstants<float>::pi) ? 1.0f : -1.0f;
-                        break;
-                    case 4: // White Noise
-                        outputSample = random.nextFloat() * 2.0f - 1.0f;
-                        break;
-                    default: // Sine
-                        outputSample = std::sin (wrappedPhase);
-                        break;
+                    case 0: rawSample = std::sin (wrappedPhase); break;
+                    case 1: rawSample = 1.0f - 2.0f * std::abs (1.0f - (wrappedPhase / juce::MathConstants<float>::pi)); break;
+                    case 2: rawSample = -1.0f + 2.0f * (wrappedPhase / juce::MathConstants<float>::twoPi); break;
+                    case 3: rawSample = (wrappedPhase < juce::MathConstants<float>::pi) ? 1.0f : -1.0f; break;
+                    case 4: rawSample = random.nextFloat() * 2.0f - 1.0f; break;
+                    default: rawSample = std::sin (wrappedPhase); break;
+                }
+
+                // Wavefolding Logic
+                float finalFoldDepth = juce::jlimit (0.0f, 1.0f, foldKnob + foldModOffset);
+                if (finalFoldDepth > 0.001f)
+                {
+                    float drive = 1.0f + (finalFoldDepth * 5.0f);
+                    float foldedSample = std::sin (rawSample * drive) * (1.0f / std::sqrt (drive));
+                    outputSample = std::tanh (foldedSample + audioInputSum);
+                }
+                else
+                {
+                    outputSample = std::tanh (rawSample + audioInputSum);
                 }
             }
         }
@@ -159,8 +180,5 @@ struct FMOperator
     double currentSampleRate = 44100.0;
     juce::Random random;
     
-    juce::dsp::StateVariableTPTFilter<float> filter;
-    
-    // The newly initialized Comb Filter instance
-    SynthFilter myCombFilter; 
+    SynthFilter internalFilter; 
 };

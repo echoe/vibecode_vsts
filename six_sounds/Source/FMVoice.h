@@ -1,4 +1,3 @@
-// FMVoice.h
 #pragma once
 #include <JuceHeader.h>
 #include "FMOperator.h"
@@ -7,7 +6,6 @@
 #include <array>
 #include <memory>
 
-// Group operator parameters to eliminate visual clutter
 struct OperatorParameterCache 
 {
     std::atomic<float>* mode { nullptr };
@@ -48,31 +46,22 @@ public:
 private:
     double baseFrequency { 440.0 };
     float level { 0.0f };
-    int lastPlayedNote = 60; // Default to middle C before any note is played
+    int lastPlayedNote = 60; 
     std::atomic<float> currentBPM { 120.0f };
 
     std::array<FMOperator, ProjectConfig::numOperators> operators;
-    
-    // Using smart pointers ensures CombFilter objects won't be sliced if assigned here
-    std::array<std::unique_ptr<SynthFilter>, ProjectConfig::numOperators> opFilters;
 
     std::array<float, ProjectConfig::numOperators> lastOpOutputs { 0.0f };
     std::array<float, ProjectConfig::numOperators> previousOpOutputs { 0.0f };
     std::array<float, ProjectConfig::numOperators> processedOpOutputs { 0.0f };
 
-    // Parameter Caching
     std::array<OperatorParameterCache, ProjectConfig::numOperators> opParams;
-
-    // idk the AI says this is necessary
     std::array<std::atomic<float>*, 6> extraModParams { nullptr };
 
-    // Matrix Background Storage
     std::array<std::array<std::atomic<float>*, ProjectConfig::numOperators>, ProjectConfig::numOperators> matrixParams {};
     std::array<std::array<std::atomic<float>*, ProjectConfig::numOperators>, ProjectConfig::numOperators> audioMatrixParams {};
     std::array<std::array<std::array<std::atomic<float>*, ProjectConfig::numOperators>, ProjectConfig::numOperators>, 3> customModMatrixParams {};
 
-    // Mod matrix
-    // Pointers to the 6 global modulation matrix slots
     std::array<std::atomic<float>*, 6> modSrcParams { nullptr };
     std::array<std::atomic<float>*, 6> modTgtParams { nullptr };
     std::array<std::atomic<float>*, 6> modAmtParams { nullptr };
