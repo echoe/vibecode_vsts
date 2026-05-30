@@ -70,7 +70,7 @@ struct FMOperator
 		static int debugCounter = 0;
                 if (++debugCounter % 22050 == 0) // Prints twice a second
                 {
-                        DBG("Comb Executing! Input: " << audioInput << " | Cutoff: " << cutoff << " | Env: " << envelope.isActive());
+                        DBG("Comb Executing! Input: " << audioInput << " | Cutoff: " << cutoff << " | Env: " << (int)envelope.isActive());
                 }
             }
             //if (filterType == 3) // Comb Filter - commented out to try this new option

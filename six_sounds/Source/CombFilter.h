@@ -23,6 +23,12 @@ public:
         combBuffer.assign (static_cast<size_t>(requiredBufferSize), 0.0f);
         writePtr = 0;
     }
+    void noteStarted() override //reset the combbutter for a new note so keytracking works
+    {
+    	std::fill(combBuffer.begin(), combBuffer.end(), 0.0f);
+    	writePtr = 0;
+    	lastCombDamping = 0.0f;
+    }
 
     void reset() override
     {
@@ -82,13 +88,7 @@ public:
         // 1-pole lowpass inside the feedback loop
         lastCombDamping = (delayedSample * (1.0f - dampingNormalized)) + (lastCombDamping * dampingNormalized);
 
-        // --- Bipolar Feedback ---
-        // Scale your 0.0 -> 1.0 envelope attack to a bipolar -0.99 to +0.99 range
-        // If Attack knob is at 0.5, feedback is 0.
-        // If Attack knob is at 1.0, feedback is +0.99.
-        float mappedFeedback = (feedback - 0.5f) * 1.98f;
-        float safeFeedback = juce::jlimit (-0.995f, 0.995f, mappedFeedback);
-        
+        float safeFeedback = juce::jlimit (-0.995f, 0.995f, feedback);
         float output = input + (lastCombDamping * safeFeedback);
 
         // Soft-clip the buffer input so it screams without blowing up your speakers

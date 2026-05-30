@@ -53,7 +53,6 @@ void FMVoice::initParameters (juce::AudioProcessorValueTreeState& apvts)
         check("DECAY_" + opNum, opParams[i].decay);
         check("SUSTAIN_" + opNum, opParams[i].sustain);
         check("RELEASE_" + opNum, opParams[i].release);
-        check("FILTER_Q_" + opNum, opParams[i].q);
         check("TEMPO_SYNC_" + opNum, opParams[i].sync);
         
         check("MOD_SRC_" + opNum, modSrcParams[i]);
@@ -112,6 +111,7 @@ void FMVoice::startNote (int midiNoteNumber, float velocity, juce::SynthesiserSo
             
             operators[i].noteOn (p);
         }
+	if (opFilters[i] != nullptr) opFilters[i]->noteStarted();
     }
 }
 
@@ -155,7 +155,7 @@ void FMVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
 
     double safeSampleRate = getSampleRate() > 0.0 ? getSampleRate() : 44100.0;
     float currentBpmValue = currentBPM.load(std::memory_order_relaxed);
-
+    // get currentNote
     // =====================================================================
     // BULLETPROOF PARAMETER LOADER
     // If a pointer is null, it returns a safe default instead of crashing
@@ -178,7 +178,10 @@ void FMVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
         cachedRatios[i]    = safeLoad(opParams[i].ratio, 1.0f); // Default ratio to 1
         cachedDetunes[i]   = safeLoad(opParams[i].detune, 0.0f);
         cachedPhases[i]    = safeLoad(opParams[i].phase, 0.0f);
-        cachedFolds[i]     = safeLoad(opParams[i].fold, 0.0f);
+	DBG("Op " << i << " phase ptr: " << (opParams[i].phase != nullptr ? "valid" : "null") 
+    << "  raw value: " << (opParams[i].phase != nullptr ? opParams[i].phase->load() : -999.0f)
+    << "  cachedPhases: " << cachedPhases[i]);
+	cachedFolds[i]     = safeLoad(opParams[i].fold, 0.0f);
         cachedOuts[i]      = safeLoad(opParams[i].out, 0.0f);
         cachedModes[i]       = static_cast<int>(safeLoad(opParams[i].mode, 0.0f));
         cachedShapes[i]      = static_cast<int>(safeLoad(opParams[i].wave, 0.0f));
@@ -274,24 +277,27 @@ void FMVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
 		float shiftedDampingKnob = rawDampingKnob + 50.0f;
 		float normalizedDamping = shiftedDampingKnob / 100.0f;
                 float dampingAmt  = juce::jlimit(0.001f, 0.95f, normalizedDamping);
-                float keytrackAmt = cachedPhases[dest];               // 0.0 to 1.0
+                float keytrackAmt = cachedPhases[dest] / 360.0f; // normalize to 0.0 to 1.0
             
                 float normalizedKnob = (ratio - 0.25f) / (16.0f - 0.25f);
                 float baseFreq       = 20.0f * std::pow (1000.0f, normalizedKnob);
             
                 // --- 2. APPLY KEYTRACKING ---
-                float noteOffset = (float)(getCurrentlyPlayingNote() - 60);
-                float keytrackMultiplier = std::pow(2.0f, (noteOffset * keytrackAmt) / 12.0f);
-                float tunedFreq = baseFreq * keytrackMultiplier;
-            
-                // --- 3. FILTER MODE PROCESSING ---
+                float tunedFreq = baseFreq + keytrackAmt * (baseFrequency - baseFreq);
+		// --- 3. FILTER MODE PROCESSING ---
                 if (currentFilterType == 3) // Comb Filter
                 {
-                    // Add Modulation to the tuned frequency
-                    float combFreq = tunedFreq + (modulationSum * 200.0f) + (cutoffModOffsets[dest] * 4000.0f);
-                    combFreq = juce::jlimit (20.0f, static_cast<float>(safeSampleRate) * 0.49f, combFreq);
-                    float output = opFilters[dest]->processSampleComb (audioInputSum, combFreq, feedbackAmt, dampingAmt);
-		    opOutputs[dest] = std::isfinite(output) ? std::tanh(output) : 0.0f;
+                    	// Add Modulation to the tuned frequency
+		    	float modDepth = 1.0f - keytrackAmt;
+    		    	float combFreq = tunedFreq + modDepth * (modulationSum * 200.0f + cutoffModOffsets[dest] * 4000.0f);
+    		    	combFreq = juce::jlimit(20.0f, static_cast<float>(safeSampleRate) * 0.49f, combFreq);
+    		    	DBG("  baseFreq: " << baseFreq
+    			<< "  keytrackAmt: " << keytrackAmt
+    			<< "  cachedPhases[dest]: " << cachedPhases[dest]
+    			<< "  combFreq: " << combFreq);
+
+			float output = opFilters[dest]->processSampleComb(audioInputSum, combFreq, feedbackAmt, dampingAmt);
+    			opOutputs[dest] = std::isfinite(output) ? std::tanh(output) : 0.0f;
                 }
                 else // SVF Filter
                 {

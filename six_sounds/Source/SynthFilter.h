@@ -51,6 +51,8 @@ public:
         s2 = 0.0f;
     }
 
+    virtual void noteStarted() {} // so keytracking works for comb filter
+
     // Standard Block Rate / Parameter Rate SVF Processing
     virtual float processSample (float input)
     {

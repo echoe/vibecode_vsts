@@ -49,6 +49,7 @@ public:
 private:
     double baseFrequency { 440.0 };
     float level { 0.0f };
+    int lastPlayedNote = 60; // Default to middle C before any note is played
     std::atomic<float> currentBPM { 120.0f };
 
     std::array<FMOperator, ProjectConfig::numOperators> operators;

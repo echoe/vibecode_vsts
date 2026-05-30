@@ -125,23 +125,12 @@ private:
 
         waveShapeSelector.setVisible (isWaveMode);
         filterTypeSelector.setVisible (isFilterMode);
-
-        // Handle dynamic parameter re-linking safely via class reference
-        phaseAttach.reset();
-
         if (isFilterMode)
         {
             ratioLabel.setText ("Cutoff", juce::dontSendNotification);
             detuneLabel.setText ("Resonance", juce::dontSendNotification);
             phaseLabel.setText ("Keytrack", juce::dontSendNotification);
 	    foldLabel.setText("Feedback", juce::dontSendNotification);
-
-	    // Set the knobs to their new settings
-            phaseSlider.setRange (0.1, 10.0, 0.01);
-            phaseSlider.setSkewFactorFromMidPoint (1.5);
-            phaseSlider.setTextValueSuffix ("");
-
-            phaseAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "FILTER_Q_" + opNum, phaseSlider);
         }
         else
         {
@@ -149,12 +138,6 @@ private:
             detuneLabel.setText ("Detune", juce::dontSendNotification);
             phaseLabel.setText ("Phase", juce::dontSendNotification);
 	    foldLabel.setText ("Fold", juce::dontSendNotification);
-
-            phaseSlider.setRange (0.0, 360.0, 1.0);
-            phaseSlider.setSkewFactor (1.0);
-            phaseSlider.setTextValueSuffix (juce::CharPointer_UTF8 ("°"));
-
-            phaseAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, "PHASE_" + opNum, phaseSlider);
         }
 
         ratioSlider.setTextValueSuffix (isSynced ? "x" : "");
