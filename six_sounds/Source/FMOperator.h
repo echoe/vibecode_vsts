@@ -1,6 +1,7 @@
 // FMOperator.h
 #pragma once
 #include <JuceHeader.h>
+#include "CombFilter.h" // Include your custom class
 
 struct FMOperator
 {
@@ -10,58 +11,79 @@ struct FMOperator
         envelope.setSampleRate (sampleRate);
         phase = 0.0;        
         
-        // Prepare filters
+        // Prepare SVF Filter
         filter.prepare ({ sampleRate, 1, 1 });
         filter.reset();
-    
-        // PREPARE COMB BUFFER (Allocate 1 second of audio memory)
-        combBuffer.resize (static_cast<size_t> (sampleRate));
-        std::fill (combBuffer.begin(), combBuffer.end(), 0.0f);
-        combWriteIdx = 0;
+        
+        // PREPARE COMB FILTER CLASS
+        myCombFilter.prepare (sampleRate);
     }
+    
     void noteOn (const juce::ADSR::Parameters& envParams)
     {
-	// envelope parameters
         envelope.setParameters (envParams);
         envelope.noteOn();
         phase = 0.0;
-        // filter parameters
+        
+        // Reset both filters to prevent ghost echoes
         filter.reset();
+        myCombFilter.reset();
     }
-    void noteOff(){ envelope.noteOff();}
-    void resetPhase (float phaseInDegrees){ phase = (phaseInDegrees / 360.0) * juce::MathConstants<double>::twoPi;}
-    // should combBuffer reset on filter.reset? why is it reset within the operator?
-    void resetVoiceState() {envelope.reset();filter.reset();}
+    
+    void noteOff() { envelope.noteOff(); }
+    
+    void resetPhase (float phaseInDegrees) 
+    { 
+        phase = (phaseInDegrees / 360.0) * juce::MathConstants<double>::twoPi; 
+    }
+    
+    void resetVoiceState() 
+    {
+        envelope.reset();
+        filter.reset();
+        myCombFilter.reset(); // Clear Comb Filter on voice reset
+    }
 
-    // Signature updated to accept separated mode/shape, internal audio routing, and filter params
     float processSample (double baseFrequency, float ratio, float detune, float phaseModulation,
                          float audioInput, int mode, int waveShape, int filterType, float filterQ)
     {
         if (!envelope.isActive()) return 0.0f;
+        
         float outputSample = 0.0f;
+        
         // --- MODE 2: FILTER ---
         if (mode == 2)
         {
-            // Calculate cutoff using the base frequency modulated by the Ratio & Detune sliders
             float cutoff = static_cast<float> (baseFrequency * ratio) + detune;
             cutoff = juce::jlimit (20.0f, 20000.0f, cutoff);
-            
-            if (filterType == 3) // Comb Filter
+	    if (filterType == 3) // Comb Filter
             {
-                float delayTimeMs = 1000.0f / cutoff; // Cutoff maps to delay time for pitch tracking
-                int delaySamples = static_cast<int> ((delayTimeMs / 1000.0f) * currentSampleRate);
-                delaySamples = juce::jlimit (1, (int)combBuffer.size() - 1, delaySamples);
-                
-                int readIdx = (combWriteIdx - delaySamples + (int)combBuffer.size()) % combBuffer.size();
-                float delayedSample = combBuffer[static_cast<size_t> (readIdx)];
-                
-                // Map Q to feedback amount (0.0 to 0.95 max to prevent infinite buildup)
-                float feedback = juce::jlimit (0.0f, 0.95f, filterQ / 10.0f);
-                outputSample = audioInput + (delayedSample * feedback);
-                
-                combBuffer[static_cast<size_t> (combWriteIdx)] = outputSample;
-                combWriteIdx = (combWriteIdx + 1) % combBuffer.size();
+                // Opsix-style Bipolar mapping:
+                // Assuming your Q knob goes from 0.0 to 10.0:
+                // Q = 5.0 -> 0 feedback (dry)
+                // Q > 5.0 -> Positive feedback (up to +0.99)
+                // Q < 5.0 -> Negative feedback (down to -0.99)
+                float mappedFeedback = ((filterQ / 5.0f) - 1.0f) * 0.99f;
+
+                // Route audio directly into the upgraded CombFilter
+		outputSample = myCombFilter.processSampleComb (audioInput, cutoff, mappedFeedback, 0.0f);
+		static int debugCounter = 0;
+                if (++debugCounter % 22050 == 0) // Prints twice a second
+                {
+                        DBG("Comb Executing! Input: " << audioInput << " | Cutoff: " << cutoff << " | Env: " << envelope.isActive());
+                }
             }
+            //if (filterType == 3) // Comb Filter - commented out to try this new option
+            //{
+                // Map Q to feedback amount (0.0 to 0.95 max)
+                //float feedback = juce::jlimit (0.0f, 0.95f, filterQ / 10.0f);
+                
+                // Fixed 10% damping for a slight analog high-frequency decay
+                //float damping = 0.1f; 
+                
+                // Route audio directly into your CombFilter class
+                //outputSample = myCombFilter.processSampleComb (audioInput, cutoff, feedback, damping);
+            //}
             else // SVF (Lowpass, Highpass, Bandpass)
             {
                 filter.setCutoffFrequency (cutoff);
@@ -119,21 +141,18 @@ struct FMOperator
                     case 0: // Sine
                         outputSample = std::sin (wrappedPhase);
                         break;
-                        
                     case 1: // Triangle
                         outputSample = 1.0f - 2.0f * std::abs (1.0f - (wrappedPhase / juce::MathConstants<float>::pi));
                         break;
-                        
                     case 2: // Saw
                         outputSample = -1.0f + 2.0f * (wrappedPhase / juce::MathConstants<float>::twoPi);
                         break;
-                        
                     case 3: // Square
                         outputSample = (wrappedPhase < juce::MathConstants<float>::pi) ? 1.0f : -1.0f;
                         break;
-		    case 4: // White Noise
-        		outputSample = random.nextFloat() * 2.0f - 1.0f;
-        		break;
+                    case 4: // White Noise
+                        outputSample = random.nextFloat() * 2.0f - 1.0f;
+                        break;
                     default: // Sine
                         outputSample = std::sin (wrappedPhase);
                         break;
@@ -141,7 +160,6 @@ struct FMOperator
             }
         }
         
-        // VCA processing applied to whichever mode generated/processed the sound
         return outputSample * envelope.getNextSample();
     }
 
@@ -153,6 +171,7 @@ struct FMOperator
     juce::Random random;
     
     juce::dsp::StateVariableTPTFilter<float> filter;
-    std::vector<float> combBuffer;
-    int combWriteIdx = 0;
+    
+    // The newly initialized Comb Filter instance
+    CombFilter myCombFilter; 
 };

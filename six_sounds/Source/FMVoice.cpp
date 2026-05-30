@@ -6,7 +6,8 @@ FMVoice::FMVoice()
     for (int i = 0; i < ProjectConfig::numOperators; ++i)
     {
         // Pre-allocate base filters to avoid audio thread allocations later
-        opFilters[i] = std::make_unique<SynthFilter>(); 
+	// The CombFilter inherest SynthFilter which means we can call SynthFilter through it. This feels backwards
+        opFilters[i] = std::make_unique<CombFilter>(); 
         
         for (int j = 0; j < ProjectConfig::numOperators; ++j)
         {
@@ -166,7 +167,7 @@ void FMVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
     // =====================================================================
     // 1. CACHE PARAMETERS (CPU Optimization)
     // =====================================================================
-    std::array<float, ProjectConfig::numOperators> cachedRatios, cachedDetunes, cachedPhases, cachedFolds, cachedOuts, cachedQs;
+    std::array<float, ProjectConfig::numOperators> cachedRatios, cachedDetunes, cachedPhases, cachedFolds, cachedOuts;
     std::array<int, ProjectConfig::numOperators> cachedModes, cachedShapes, cachedFilterTypes;
     std::array<bool, ProjectConfig::numOperators> cachedSyncs;
     std::array<float, ProjectConfig::numOperators> cachedAttacks, cachedDecays, cachedSustains, cachedReleases;
@@ -179,25 +180,14 @@ void FMVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
         cachedPhases[i]    = safeLoad(opParams[i].phase, 0.0f);
         cachedFolds[i]     = safeLoad(opParams[i].fold, 0.0f);
         cachedOuts[i]      = safeLoad(opParams[i].out, 0.0f);
-        cachedQs[i]        = safeLoad(opParams[i].q, 0.707f);
-        
         cachedModes[i]       = static_cast<int>(safeLoad(opParams[i].mode, 0.0f));
         cachedShapes[i]      = static_cast<int>(safeLoad(opParams[i].wave, 0.0f));
         cachedFilterTypes[i] = static_cast<int>(safeLoad(opParams[i].filterType, 0.0f));
-        
         cachedSyncs[i]     = safeLoad(opParams[i].sync, 0.0f) > 0.5f;
-        
         cachedAttacks[i]   = safeLoad(opParams[i].attack, 0.1f);
         cachedDecays[i]    = safeLoad(opParams[i].decay, 0.1f);
         cachedSustains[i]  = safeLoad(opParams[i].sustain, 1.0f);
         cachedReleases[i]  = safeLoad(opParams[i].release, 0.1f);
-
-        if (opFilters[i] != nullptr) 
-        {
-            opFilters[i]->setType(cachedFilterTypes[i]);
-            float resonanceQ = 0.1f + (cachedDetunes[i] * 4.9f); 
-            opFilters[i]->setResonance(resonanceQ);
-        }
     }
 
     // =====================================================================
@@ -270,50 +260,53 @@ void FMVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
             int opMode = cachedModes[dest];
             int opShape = cachedShapes[dest];
             int currentFilterType = cachedFilterTypes[dest];
-            float currentQ = juce::jlimit (0.05f, 25.0f, cachedQs[dest] + (qModOffsets[dest] * 5.0f));
 
             // =========================================================
             // CORE DSP DISPATCH
             // =========================================================
 
             // MODE 2: FILTER
-            if (opMode == 2 && opFilters[dest] != nullptr)
+	    if (opMode == 2 && opFilters[dest] != nullptr)
             {
+                // --- 1. PREPARE PARAMETERS ---
+                float feedbackAmt = juce::jlimit(-0.95f, 0.95f, (cachedFolds[dest] * 2.0f) - 1.0f);
+		float rawDampingKnob = cachedDetunes[dest];
+		float shiftedDampingKnob = rawDampingKnob + 50.0f;
+		float normalizedDamping = shiftedDampingKnob / 100.0f;
+                float dampingAmt  = juce::jlimit(0.001f, 0.95f, normalizedDamping);
+                float keytrackAmt = cachedPhases[dest];               // 0.0 to 1.0
+            
+                float normalizedKnob = (ratio - 0.25f) / (16.0f - 0.25f);
+                float baseFreq       = 20.0f * std::pow (1000.0f, normalizedKnob);
+            
+                // --- 2. APPLY KEYTRACKING ---
+                float noteOffset = (float)(getCurrentlyPlayingNote() - 60);
+                float keytrackMultiplier = std::pow(2.0f, (noteOffset * keytrackAmt) / 12.0f);
+                float tunedFreq = baseFreq * keytrackMultiplier;
+            
+                // --- 3. FILTER MODE PROCESSING ---
                 if (currentFilterType == 3) // Comb Filter
                 {
-                    float feedbackAmt = cachedAttacks[dest] * 0.99f;
-                    float dampingAmt  = cachedDecays[dest] * 0.95f;
-                    float freqKnob    = cachedSustains[dest];
-                    float keytrack    = cachedReleases[dest];
-                    float combFreq    = 1000.0f;
-
-                    if (keytrack > 0.5f)
-                    {
-                        float octaveShift = (freqKnob * 4.0f) - 2.0f;
-                        combFreq = baseFrequency * ratio * std::pow (2.0f, octaveShift);
-                    }
-                    else
-                    {
-                        combFreq = 20.0f * std::pow (500.0f, freqKnob);
-                    }
-
-                    combFreq += (modulationSum * 200.0f) + (cutoffModOffsets[dest] * 4000.0f);
+                    // Add Modulation to the tuned frequency
+                    float combFreq = tunedFreq + (modulationSum * 200.0f) + (cutoffModOffsets[dest] * 4000.0f);
                     combFreq = juce::jlimit (20.0f, static_cast<float>(safeSampleRate) * 0.49f, combFreq);
-
-                    opOutputs[dest] = opFilters[dest]->processSampleComb (audioInputSum, combFreq, feedbackAmt, dampingAmt);
+                    float output = opFilters[dest]->processSampleComb (audioInputSum, combFreq, feedbackAmt, dampingAmt);
+		    opOutputs[dest] = std::isfinite(output) ? std::tanh(output) : 0.0f;
                 }
                 else // SVF Filter
                 {
-                    float normalizedKnob = (ratio - 0.25f) / (16.0f - 0.25f);
-                    float baseCutoff = 20.0f * std::pow (1000.0f, normalizedKnob);
-
                     modulationSum = std::tanh (modulationSum * 0.2f) * 5.0f;
-
-                    opFilters[dest]->setResonance (currentQ);
+            
+                    // Coupled Resonance (Non-linear curve)
+                    float coupledResonance = dampingAmt * dampingAmt;
+                    opFilters[dest]->setResonance (coupledResonance);
+            
                     float currentK = opFilters[dest]->getPrecalculatedK();
-                    float dynamicCutoff = baseCutoff + (modulationSum * 5000.0f) + (cutoffModOffsets[dest] * 4000.0f);
+            
+                    // Add Modulation to the tuned frequency
+                    float dynamicCutoff = tunedFreq + (modulationSum * 5000.0f) + (cutoffModOffsets[dest] * 4000.0f);
                     dynamicCutoff = juce::jlimit (20.0f, static_cast<float>(safeSampleRate) * 0.49f, dynamicCutoff);
-
+            
                     opOutputs[dest] = opFilters[dest]->processSampleAudioRate (audioInputSum, dynamicCutoff, currentK);
                 }
             }
@@ -339,7 +332,7 @@ void FMVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
                 // IMPORTANT: Ensure operators[dest].processSample() internally calls adsr.getNextSample()!
                 float rawSample = operators[dest].processSample (
                     modulatedFreq, ratio, detune, modulationSum,
-                    audioInputSum, opMode, opShape, currentFilterType, currentQ
+                    audioInputSum, opMode, opShape, currentFilterType, phaseOffset
                 );
 		if (opMode == 0) // WAVE
                 {

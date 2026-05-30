@@ -39,14 +39,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout FMPluginAudioProcessor::crea
         params.push_back (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "FILTER_TYPE_" + opNum, 1 }, "Op " + opNum + " Filter Type", filterTypeChoices, 0));
         // Tempo Sync
         params.push_back (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "TEMPO_SYNC_" + opNum, 1 }, "Op " + opNum + " Tempo Sync", false));
-        // Osc Settings - Ratios, Detune, Phase, Fold
+        // Osc Settings - Ratios, Detune, Phase, Fold. We repurpose these for filter
         params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID {"RATIO_" + opNum, 1}, "Op " + opNum + " Ratio", 0.01f, 16.0f, 1.0f));
         params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID {"DETUNE_" + opNum, 1}, "Op " + opNum + " Detune", -50.0f, 50.0f, 0.0f));
         params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "PHASE_" + opNum, 1 }, "Op " + opNum + " Phase", 0.0f, 360.0f, 0.0f));
 	params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "FOLD_" + opNum, 1 }, "Op " + opNum + " Phase", 0.0f, 1.0f, 0.0f));
-        // Filter (only Q)
-        auto qRange = juce::NormalisableRange<float> (0.1f, 10.0f, 0.01f, 0.5f);
-        params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "FILTER_Q_" + opNum, 1 }, "Op " + opNum + " Filter Q", qRange, 0.707f));
         // Envelopes
         params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID {"ATTACK_" + opNum, 1}, "Op " + opNum + " Attack", 0.001f, 5.0f, 0.1f));
         params.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID {"DECAY_" + opNum, 1}, "Op " + opNum + " Decay", 0.01f, 5.0f, 0.2f));
@@ -284,6 +281,18 @@ void FMPluginAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
         {
             channelData[sample] = std::tanh (channelData[sample]);
+        }
+    }
+    // Inside PluginProcessor::processBlock, after your voices have rendered, let's make sure there's even less clipping I guess
+    for (int channel = 0; channel < totalNumOutputChannels; ++channel)
+    {
+        auto* channelData = buffer.getWritePointer (channel);
+
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+        {
+            // 1. Lower the overall gain (e.g., multiply by 0.4)
+            // 2. Soft-clip with tanh to absolutely guarantee it never exceeds 1.0
+            channelData[sample] = std::tanh (channelData[sample] * 0.4f);
         }
     }
 }

@@ -131,11 +131,12 @@ private:
 
         if (isFilterMode)
         {
-            ratioLabel.setText (isSynced ? "Sync Rate" : "Cutoff", juce::dontSendNotification);
+            ratioLabel.setText ("Cutoff", juce::dontSendNotification);
             detuneLabel.setText ("Resonance", juce::dontSendNotification);
-            phaseLabel.setText ("Q", juce::dontSendNotification);
+            phaseLabel.setText ("Keytrack", juce::dontSendNotification);
 	    foldLabel.setText("Feedback", juce::dontSendNotification);
 
+	    // Set the knobs to their new settings
             phaseSlider.setRange (0.1, 10.0, 0.01);
             phaseSlider.setSkewFactorFromMidPoint (1.5);
             phaseSlider.setTextValueSuffix ("");
