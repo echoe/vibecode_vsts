@@ -21,7 +21,6 @@ struct OperatorParameterCache
     std::atomic<float>* sustain { nullptr };
     std::atomic<float>* release { nullptr };
     std::atomic<float>* sync { nullptr };
-    std::atomic<float>* q { nullptr };
 };
 
 class FMVoice : public juce::SynthesiserVoice

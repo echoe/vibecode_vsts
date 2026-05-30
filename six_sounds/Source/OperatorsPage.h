@@ -43,7 +43,7 @@ struct CompactOperatorGroup : public juce::Component
         waveShapeSelector.addItemList ({ "Sine", "Triangle", "Saw", "Square", "White Noise" }, 1);
         addAndMakeVisible (waveShapeSelector);
         
-        filterTypeSelector.addItemList ({ "Lowpass", "Highpass", "Bandpass", "Comb" }, 1);
+        filterTypeSelector.addItemList ({ "Lowpass", "Highpass", "Bandpass", "Comb", "Granular" }, 1);
         addAndMakeVisible (filterTypeSelector);
 
         // APVTS Links
@@ -65,6 +65,7 @@ struct CompactOperatorGroup : public juce::Component
         // Safe UI state triggers using the stored class member reference
         modeSelector.onChange = [this]() { updateUIState(); };
         syncButton.onClick    = [this]() { updateUIState(); };
+	filterTypeSelector.onChange = [this]() {updateUIState(); };
     
         updateUIState();
     }
@@ -120,18 +121,37 @@ private:
     {
         int selectedMode = modeSelector.getSelectedId();
         bool isWaveMode = (selectedMode == 1);
+	bool isAdditiveMode = (selectedMode == 2);
         bool isFilterMode = (selectedMode == 3);
         bool isSynced = syncButton.getToggleState();
-
+	// Check for granular filter
+	int selectedFilter = filterTypeSelector.getSelectedId();
+	bool isGranular = (isFilterMode && selectedFilter == 5); // 5 is Granular
+	DBG("selectedFilter: " + juce::String(selectedFilter) + " | isFilterMode: " + juce::String((int)isFilterMode));
         waveShapeSelector.setVisible (isWaveMode);
         filterTypeSelector.setVisible (isFilterMode);
-        if (isFilterMode)
+
+	if (isGranular)
+	{
+	    ratioLabel.setText ("Grain Size", juce::dontSendNotification);
+            detuneLabel.setText ("Damping", juce::dontSendNotification);
+            phaseLabel.setText ("Scatter", juce::dontSendNotification);
+            foldLabel.setText ("Feedback", juce::dontSendNotification);
+	}
+	else if (isFilterMode)
         {
             ratioLabel.setText ("Cutoff", juce::dontSendNotification);
             detuneLabel.setText ("Resonance", juce::dontSendNotification);
             phaseLabel.setText ("Keytrack", juce::dontSendNotification);
 	    foldLabel.setText("Feedback", juce::dontSendNotification);
         }
+	else if (isAdditiveMode)
+	{
+            ratioLabel.setText (isSynced ? "Sync Rate" : "Ratio", juce::dontSendNotification);
+            detuneLabel.setText ("Tilt", juce::dontSendNotification);
+            phaseLabel.setText ("Stretch", juce::dontSendNotification);
+            foldLabel.setText ("Odd/Even", juce::dontSendNotification);
+	}
         else
         {
             ratioLabel.setText (isSynced ? "Sync Rate" : "Ratio", juce::dontSendNotification);

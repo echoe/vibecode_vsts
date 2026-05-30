@@ -176,7 +176,6 @@ void FMVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
         std::array<float, ProjectConfig::numOperators> foldModOffsets { 0.0f };
         std::array<float, ProjectConfig::numOperators> levelModOffsets { 0.0f };
         std::array<float, ProjectConfig::numOperators> cutoffModOffsets { 0.0f };
-        std::array<float, ProjectConfig::numOperators> qModOffsets { 0.0f };
 
         // --- PHASE A: MODULATION MATRIX PROCESSING ---
         for (int row = 0; row < 3; ++row)
@@ -198,8 +197,7 @@ void FMVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
                         case 1: phaseModOffsets[dest]  += modSignal; break;
                         case 2: levelModOffsets[dest]  += modSignal; break;
                         case 3: cutoffModOffsets[dest] += modSignal; break;
-                        case 4: qModOffsets[dest]      += modSignal; break;
-                        case 5: foldModOffsets[dest]   += modSignal; break;
+                        case 4: foldModOffsets[dest]   += modSignal; break;
                     }
                 }
             }
