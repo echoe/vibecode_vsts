@@ -7,7 +7,7 @@ FMVoice::FMVoice()
     {
         // Pre-allocate base filters to avoid audio thread allocations later
 	// The CombFilter inherest SynthFilter which means we can call SynthFilter through it. This feels backwards
-        opFilters[i] = std::make_unique<CombFilter>(); 
+        opFilters[i] = std::make_unique<SynthFilter>(); 
         
         for (int j = 0; j < ProjectConfig::numOperators; ++j)
         {

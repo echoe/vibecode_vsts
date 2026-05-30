@@ -1,7 +1,7 @@
 // FMOperator.h
 #pragma once
 #include <JuceHeader.h>
-#include "CombFilter.h" // Include your custom class
+#include "SynthFilter.h" // Include your custom class
 
 struct FMOperator
 {
@@ -73,17 +73,6 @@ struct FMOperator
                         DBG("Comb Executing! Input: " << audioInput << " | Cutoff: " << cutoff << " | Env: " << (int)envelope.isActive());
                 }
             }
-            //if (filterType == 3) // Comb Filter - commented out to try this new option
-            //{
-                // Map Q to feedback amount (0.0 to 0.95 max)
-                //float feedback = juce::jlimit (0.0f, 0.95f, filterQ / 10.0f);
-                
-                // Fixed 10% damping for a slight analog high-frequency decay
-                //float damping = 0.1f; 
-                
-                // Route audio directly into your CombFilter class
-                //outputSample = myCombFilter.processSampleComb (audioInput, cutoff, feedback, damping);
-            //}
             else // SVF (Lowpass, Highpass, Bandpass)
             {
                 filter.setCutoffFrequency (cutoff);
@@ -173,5 +162,5 @@ struct FMOperator
     juce::dsp::StateVariableTPTFilter<float> filter;
     
     // The newly initialized Comb Filter instance
-    CombFilter myCombFilter; 
+    SynthFilter myCombFilter; 
 };

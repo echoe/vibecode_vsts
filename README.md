@@ -10,6 +10,7 @@ Synths:
 
 six sounds: a 6 oscillator fm synth where each oscillator can be a filter. this is what the 2osc and 6osc synth were scaling to. it works okay-ish right now! :)
 
+I think I'm going to change the name. That, adding a granular filter, implementing additive, and making the modulation work are the remaining things.
 
 
 Effects:
