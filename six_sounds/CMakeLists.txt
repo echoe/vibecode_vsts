@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(SixSounds VERSION 1.0.1 LANGUAGES C CXX)
+project(OnlyOscs VERSION 1.0.1 LANGUAGES C CXX)
 
 # --- Automatically download and include JUCE ---
 include(FetchContent)
@@ -12,7 +12,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(juce)
 # ------------------------------------------------
 
-juce_add_plugin(SixSounds
+juce_add_plugin(OnlyOscs
     COMPANY_NAME "VibecodeXtreme"
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
@@ -23,9 +23,9 @@ juce_add_plugin(SixSounds
     PLUGIN_MANUFACTURER_CODE "YCom"
     PLUGIN_PLUGIN_CODE "Sres"
     FORMATS VST3 AU Standalone
-    PRODUCT_NAME "SixSounds")
+    PRODUCT_NAME "OnlyOscs")
 
-target_sources(SixSounds PRIVATE
+target_sources(OnlyOscs PRIVATE
     Source/PluginProcessor.h
     Source/PluginProcessor.cpp
     Source/PluginEditor.h
@@ -34,19 +34,19 @@ target_sources(SixSounds PRIVATE
 )
 
 # --- ADD THIS BLOCK TO BYPASS GTK/WEBKIT DEPENDENCIES ---
-target_compile_definitions(SixSounds PRIVATE
+target_compile_definitions(OnlyOscs PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
 )
 # --------------------------------------------------------
 
-target_compile_features(SixSounds PRIVATE cxx_std_17)
+target_compile_features(OnlyOscs PRIVATE cxx_std_17)
 
-target_link_libraries(SixSounds PRIVATE
+target_link_libraries(OnlyOscs PRIVATE
     juce::juce_audio_processors
     juce::juce_dsp
     juce::juce_audio_utils
 )
 
-juce_generate_juce_header(SixSounds)
+juce_generate_juce_header(OnlyOscs)

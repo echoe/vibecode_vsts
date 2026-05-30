@@ -49,6 +49,13 @@ FMPluginAudioProcessorEditor::FMPluginAudioProcessorEditor (FMPluginAudioProcess
     gainAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         p.apvts, "GAIN_CEIL", gainSlider);
 
+    // Add title
+    titleLabel.setText ("Only Oscs", juce::dontSendNotification);
+    titleLabel.setJustificationType (juce::Justification::centred);
+    titleLabel.setFont (juce::Font (juce::FontOptions().withHeight (18.0f).withStyle ("Bold")));
+    titleLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+    addAndMakeVisible (titleLabel);
+
     setPage (PageView::Operators);
     setSize (950, 680); // Expanded boundary footprint to comfortably show labels
 }
@@ -87,6 +94,9 @@ void FMPluginAudioProcessorEditor::resized()
     auto gainArea = topBarArea.removeFromRight (220);
     gainLabel.setBounds (gainArea.removeFromLeft (45));
     gainSlider.setBounds (gainArea.reduced (2));
+
+    // Add title in remaining area in top 
+    titleLabel.setBounds (topBarArea.reduced (2));
 
     // 2. Dedicate the subsequent 40px block underneath to UI Navigation Page switching
     auto navArea = area.removeFromTop (40);

@@ -22,6 +22,7 @@ public:
 private:
     FMPluginAudioProcessor& audioProcessor;
     PresetBar presetBar; // <-- Preset support
+    juce::Label titleLabel;
     juce::TextButton opsPageButton, matrixPageButton, audioMatrixPageButton, effectsPageButton;
     OperatorsPage opsPage;
     MatrixPage matrixPage;

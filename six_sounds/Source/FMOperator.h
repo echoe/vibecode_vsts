@@ -110,10 +110,13 @@ struct FMOperator
             {
                 nodeTargetFrequency = currentBpm / 60.0f;
             }
+	    // Apply ratio to set the operator's base frequency
+	    nodeTargetFrequency *= ratio;
 
-            float semitoneOffset = pitchModOffset * 12.0f;
-            float modulatedFreq = nodeTargetFrequency * std::pow (2.0f, semitoneOffset / 12.0f);
-            modulatedFreq = juce::jlimit(0.1f, static_cast<float>(currentSampleRate) * 0.49f, modulatedFreq);
+	    // Convert detune (cents) + pitch mod offset (semitones) into a frequency multiplier
+	    float totalSemitones = (detune / 100.0f) + (pitchModOffset * 12.0f);
+	    float modulatedFreq  = nodeTargetFrequency * std::pow (2.0f, totalSemitones / 12.0f);
+	    modulatedFreq = juce::jlimit (0.1f, static_cast<float> (currentSampleRate) * 0.49f, modulatedFreq);
 
             // Phase Increment
             double phaseIncrement = (modulatedFreq * juce::MathConstants<double>::twoPi) / currentSampleRate;

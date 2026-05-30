@@ -41,6 +41,15 @@ public:
     void setDAWTempo (float newBPM) noexcept;
     void resetVoiceState();
     void renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int startSample, int numSamples) override;
+    // Effects modulation outputs — read by PluginProcessor after renderNextBlock
+    std::atomic<float> chorusMixMod     { 0.0f };
+    std::atomic<float> chorusRateMod    { 0.0f };
+    std::atomic<float> chorusDepthMod   { 0.0f };
+    std::atomic<float> delayMixMod      { 0.0f };
+    std::atomic<float> delayTimeMod     { 0.0f };
+    std::atomic<float> delayFeedbackMod { 0.0f };
+    std::atomic<float> reverbMixMod     { 0.0f };
+    std::atomic<float> reverbRoomMod    { 0.0f };
 
 private:
     double baseFrequency { 440.0 };
@@ -57,11 +66,12 @@ private:
     std::array<OperatorParameterCache, ProjectConfig::numOperators> opParams;
     std::array<std::atomic<float>*, 6> extraModParams { nullptr };
 
-    std::array<std::array<std::atomic<float>*, ProjectConfig::numOperators>, ProjectConfig::numOperators> matrixParams {};
-    std::array<std::array<std::atomic<float>*, ProjectConfig::numOperators>, ProjectConfig::numOperators> audioMatrixParams {};
-    std::array<std::array<std::array<std::atomic<float>*, ProjectConfig::numOperators>, ProjectConfig::numOperators>, 3> customModMatrixParams {};
+    static constexpr int numModSlots = 6;
+    std::atomic<float>* modSlotSrc[numModSlots] { nullptr };
+    std::atomic<float>* modSlotTgt[numModSlots] { nullptr };
+    std::atomic<float>* modSlotAmt[numModSlots] { nullptr };
 
-    std::array<std::atomic<float>*, 6> modSrcParams { nullptr };
-    std::array<std::atomic<float>*, 6> modTgtParams { nullptr };
-    std::array<std::atomic<float>*, 6> modAmtParams { nullptr };
+    // FM and Audio routing grids
+    std::atomic<float>* matrixParams[ProjectConfig::numOperators][ProjectConfig::numOperators]      { nullptr };
+    std::atomic<float>* audioMatrixParams[ProjectConfig::numOperators][ProjectConfig::numOperators] { nullptr };
 };

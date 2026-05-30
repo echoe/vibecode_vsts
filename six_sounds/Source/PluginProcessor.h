@@ -38,7 +38,6 @@ public:
 
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
-
     juce::AudioProcessorValueTreeState apvts;
 
 private:
@@ -51,7 +50,17 @@ private:
     juce::dsp::Chorus<float> chorusModule;
     juce::dsp::Reverb        reverbModule;
     juce::dsp::Reverb::Parameters reverbParams;
-    std::vector<std::vector<float>> delayBuffers;
-    int delayWriteIndex = 0;
+    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Linear> delayLineL { 192000 };
+    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Linear> delayLineR { 192000 };
+    float delayFeedbackL = 0.0f;
+    float delayFeedbackR = 0.0f;
+    std::atomic<float>* chorusMixParam     { nullptr };
+    std::atomic<float>* chorusRateParam    { nullptr };
+    std::atomic<float>* chorusDepthParam   { nullptr };
+    std::atomic<float>* delayMixParam      { nullptr };
+    std::atomic<float>* delayTimeParam     { nullptr };
+    std::atomic<float>* delayFeedbackParam { nullptr };
+    std::atomic<float>* reverbMixParam     { nullptr };
+    std::atomic<float>* reverbRoomParam    { nullptr };
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FMPluginAudioProcessor)
 };
